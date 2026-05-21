@@ -1,0 +1,49 @@
+# requirements.txt
+# Multimodal Emotion Recognition System
+# ──────────────────────────────────────
+# Install with: pip install -r requirements.txt
+
+# Core Deep Learning
+torch>=2.1.0
+torchvision>=0.16.0
+torchaudio>=2.1.0         # optional, for audio modality extension
+
+# NLP & Transformers
+transformers>=4.38.0
+tokenizers>=0.15.0
+datasets>=2.17.0           # for loading HuggingFace datasets directly
+accelerate>=0.27.0         # distributed training utilities
+
+# Computer Vision
+opencv-python>=4.9.0       # image loading, face detection, preprocessing
+Pillow>=10.2.0             # image I/O for PyTorch transforms
+timm>=0.9.12               # ViT and other vision transformers
+
+# Data Science
+numpy>=1.26.0
+pandas>=2.2.0
+scikit-learn>=1.4.0        # metrics, train/test split, preprocessing
+
+# Visualisation
+matplotlib>=3.8.0
+seaborn>=0.13.0
+
+# Configuration
+PyYAML>=6.0.1
+
+# GenAI
+anthropic>=0.23.0          # Claude API client
+
+# Utilities
+tqdm>=4.66.0               # progress bars
+tensorboard>=2.16.0        # training visualisation
+rich>=13.7.0               # pretty terminal output
+
+# Optional — API serving
+# fastapi>=0.110.0
+# uvicorn>=0.28.0
+# python-multipart>=0.0.9    # file uploads in FastAPI
+
+# Optional — Jupyter
+# notebook>=7.1.0
+# ipywidgets>=8.1.0

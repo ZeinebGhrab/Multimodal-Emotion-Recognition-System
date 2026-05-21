@@ -1,0 +1,96 @@
+# configs/config.yaml
+# ─────────────────────────────────────────────────────────────
+# Central configuration for the Multimodal Emotion Recognition project
+# ─────────────────────────────────────────────────────────────
+
+project:
+  name: "Multimodal Emotion Recognition"
+  seed: 42
+
+paths:
+  data_raw: "data/raw"
+  data_processed: "data/processed"
+  checkpoints: "outputs/checkpoints"
+  figures: "outputs/figures"
+  reports: "outputs/reports"
+
+emotions:
+  classes: ["angry", "disgust", "fear", "happy", "neutral", "sad", "surprise"]
+  num_classes: 7
+
+# ── Image Pipeline ──────────────────────────────────────────
+image:
+  size: 48           # FER2013 native resolution
+  resize: 224        # Required by ResNet / ViT
+  channels: 3        # Convert grayscale → RGB
+  mean: [0.485, 0.456, 0.406]   # ImageNet normalization
+  std:  [0.229, 0.224, 0.225]
+  augmentation:
+    horizontal_flip: true
+    random_crop: true
+    color_jitter: true
+    rotation_degrees: 10
+
+# ── Text Pipeline ───────────────────────────────────────────
+text:
+  max_length: 128        # Max tokens for BERT / LSTM
+  vocab_size: 30000      # For LSTM tokenizer
+  embedding_dim: 100     # GloVe dimensions
+  glove_path: "data/raw/glove.6B.100d.txt"
+
+# ── Model Hyperparameters ───────────────────────────────────
+cnn:
+  backbone: "resnet50"
+  pretrained: true
+  dropout: 0.5
+  learning_rate: 0.0001
+  batch_size: 64
+  epochs: 30
+  scheduler: "cosine"
+
+vit:
+  backbone: "google/vit-base-patch16-224"
+  pretrained: true
+  dropout: 0.1
+  learning_rate: 0.00002
+  batch_size: 32
+  epochs: 20
+
+lstm:
+  hidden_size: 256
+  num_layers: 2
+  bidirectional: true
+  dropout: 0.4
+  learning_rate: 0.001
+  batch_size: 128
+  epochs: 30
+
+bert:
+  model_name: "bert-base-uncased"
+  dropout: 0.3
+  learning_rate: 0.00002
+  batch_size: 32
+  epochs: 10
+  warmup_steps: 500
+
+# ── Fusion ──────────────────────────────────────────────────
+fusion:
+  image_feature_dim: 512
+  text_feature_dim: 768
+  hidden_dim: 512
+  dropout: 0.3
+  learning_rate: 0.0001
+  batch_size: 32
+  epochs: 20
+  type: "attention"   # early | late | attention
+
+  attention:
+    num_heads: 8
+    d_model: 512
+
+# ── GenAI Module ────────────────────────────────────────────
+genai:
+  provider: "anthropic"           # anthropic | huggingface
+  model: "claude-sonnet-4-20250514"
+  max_tokens: 600
+  temperature: 0.7
