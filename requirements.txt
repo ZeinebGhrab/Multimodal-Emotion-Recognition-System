@@ -1,4 +1,3 @@
-# requirements.txt
 # Multimodal Emotion Recognition System
 # ──────────────────────────────────────
 # Install with: pip install -r requirements.txt
@@ -39,11 +38,12 @@ tqdm>=4.66.0               # progress bars
 tensorboard>=2.16.0        # training visualisation
 rich>=13.7.0               # pretty terminal output
 
-# Optional — API serving
-# fastapi>=0.110.0
-# uvicorn>=0.28.0
-# python-multipart>=0.0.9    # file uploads in FastAPI
+# API serving
+fastapi>=0.110.0
+uvicorn[standard]>=0.28.0
+python-multipart>=0.0.9    # file uploads in FastAPI
+pydantic>=2.0.0
 
-# Optional — Jupyter
+# Jupyter (optional — for full_pipeline.ipynb)
 # notebook>=7.1.0
 # ipywidgets>=8.1.0

@@ -49,9 +49,6 @@ class EarlyFusionModel(nn.Module):
                  hidden_dim: int = 512, num_classes: int = 7, dropout: float = 0.3):
         super().__init__()
 
-        fused_dim = image_dim + text_dim
-
-        # Project each modality to the same hidden space before concatenation
         self.img_proj = nn.Sequential(
             nn.Linear(image_dim, hidden_dim),
             nn.LayerNorm(hidden_dim),
@@ -63,7 +60,6 @@ class EarlyFusionModel(nn.Module):
             nn.ReLU()
         )
 
-        # Fusion MLP (on concatenated projections)
         self.fusion_mlp = nn.Sequential(
             nn.Linear(hidden_dim * 2, hidden_dim),
             nn.ReLU(),
@@ -85,17 +81,10 @@ class EarlyFusionModel(nn.Module):
 
     def forward(self, img_feats: torch.Tensor,
                 txt_feats: torch.Tensor) -> torch.Tensor:
-        """
-        Args:
-            img_feats : (B, image_dim)
-            txt_feats : (B, text_dim)
-        Returns:
-            logits    : (B, num_classes)
-        """
-        img_h = self.img_proj(img_feats)          # (B, hidden)
-        txt_h = self.txt_proj(txt_feats)          # (B, hidden)
-        fused = torch.cat([img_h, txt_h], dim=-1) # (B, 2*hidden)
-        return self.fusion_mlp(fused)             # (B, num_classes)
+        img_h = self.img_proj(img_feats)
+        txt_h = self.txt_proj(txt_feats)
+        fused = torch.cat([img_h, txt_h], dim=-1)
+        return self.fusion_mlp(fused)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -114,12 +103,11 @@ class LateFusionModel(nn.Module):
 
     def __init__(self, image_dim: int = 2048, text_dim: int = 768,
                  num_classes: int = 7, dropout: float = 0.3,
-                 mode: str = "mlp"):
+                 mode: str = "mlp", **kwargs):   # **kwargs absorbs unused fusion args
         super().__init__()
         self.mode = mode
         self.num_classes = num_classes
 
-        # Independent classifiers
         self.img_head = nn.Sequential(
             nn.Dropout(dropout),
             nn.Linear(image_dim, 256),
@@ -134,10 +122,8 @@ class LateFusionModel(nn.Module):
         )
 
         if mode == "weighted":
-            # Learnable per-class weight in [0,1]
             self.alpha = nn.Parameter(torch.full((num_classes,), 0.5))
         else:
-            # Small MLP on concatenated softmax probabilities
             self.ensemble_mlp = nn.Sequential(
                 nn.Linear(num_classes * 2, 64),
                 nn.ReLU(),
@@ -147,19 +133,19 @@ class LateFusionModel(nn.Module):
 
     def forward(self, img_feats: torch.Tensor,
                 txt_feats: torch.Tensor) -> torch.Tensor:
-        img_logits = self.img_head(img_feats)   # (B, C)
-        txt_logits = self.txt_head(txt_feats)   # (B, C)
+        img_logits = self.img_head(img_feats)
+        txt_logits = self.txt_head(txt_feats)
 
         img_probs = F.softmax(img_logits, dim=-1)
         txt_probs = F.softmax(txt_logits, dim=-1)
 
         if self.mode == "weighted":
-            alpha = torch.sigmoid(self.alpha)   # (C,)
+            alpha = torch.sigmoid(self.alpha)
             fused_probs = alpha * img_probs + (1 - alpha) * txt_probs
-            return torch.log(fused_probs + 1e-8)   # log-probs for NLL loss
+            return torch.log(fused_probs + 1e-8)
         else:
-            combined = torch.cat([img_probs, txt_probs], dim=-1)  # (B, 2C)
-            return self.ensemble_mlp(combined)                    # (B, C)
+            combined = torch.cat([img_probs, txt_probs], dim=-1)
+            return self.ensemble_mlp(combined)
 
     def get_unimodal_logits(self, img_feats: torch.Tensor,
                              txt_feats: torch.Tensor):
@@ -172,10 +158,7 @@ class LateFusionModel(nn.Module):
 # ═══════════════════════════════════════════════════════════════════════════════
 
 class CrossModalAttention(nn.Module):
-    """
-    Single-head cross-attention: query from modality A, key/value from modality B.
-    Used symmetrically in both directions (img→txt and txt→img).
-    """
+    """Bidirectional cross-attention between two modality tokens."""
 
     def __init__(self, d_model: int, num_heads: int = 8, dropout: float = 0.1):
         super().__init__()
@@ -187,43 +170,25 @@ class CrossModalAttention(nn.Module):
         self.norm = nn.LayerNorm(d_model)
 
     def forward(self, query: torch.Tensor, key_value: torch.Tensor) -> torch.Tensor:
-        """
-        Args:
-            query     : (B, 1, d_model) — attending modality
-            key_value : (B, 1, d_model) — attended modality
-        Returns:
-            (B, d_model) — query updated by attending to key_value
-        """
         attended, _ = self.attn(query, key_value, key_value)
-        return self.norm((query + attended).squeeze(1))   # residual + norm
+        return self.norm((query + attended).squeeze(1))
 
 
 class AttentionFusionModel(nn.Module):
     """
     Cross-modal attention fusion:
-
     1. Project both modalities to d_model
     2. Img attends to Text  → attended_img
     3. Text attends to Img  → attended_txt
-    4. Concat [attended_img || attended_txt] → MLP → logits
-
-    This captures "which text tokens reinforce what we see in the face" and vice versa.
-
-    Args:
-        image_dim  : image feature dim
-        text_dim   : text feature dim
-        d_model    : internal attention dimension (must be divisible by num_heads)
-        num_heads  : multi-head attention heads
-        num_classes: 7
-        dropout    : regularisation
+    4. Gating: blend attended with original
+    5. Concat → MLP → logits
     """
 
     def __init__(self, image_dim: int = 2048, text_dim: int = 768,
                  d_model: int = 512, num_heads: int = 8,
-                 num_classes: int = 7, dropout: float = 0.3):
+                 num_classes: int = 7, dropout: float = 0.3, **kwargs):
         super().__init__()
 
-        # Projection to common space
         self.img_proj = nn.Sequential(
             nn.Linear(image_dim, d_model),
             nn.LayerNorm(d_model)
@@ -233,15 +198,12 @@ class AttentionFusionModel(nn.Module):
             nn.LayerNorm(d_model)
         )
 
-        # Cross-attention (bidirectional)
         self.img_attends_txt = CrossModalAttention(d_model, num_heads, dropout)
         self.txt_attends_img = CrossModalAttention(d_model, num_heads, dropout)
 
-        # Gating: learn how much each attended representation to keep
         self.img_gate = nn.Linear(d_model, d_model)
         self.txt_gate = nn.Linear(d_model, d_model)
 
-        # Classifier MLP
         self.classifier = nn.Sequential(
             nn.Linear(d_model * 2, d_model),
             nn.ReLU(),
@@ -254,33 +216,23 @@ class AttentionFusionModel(nn.Module):
 
     def forward(self, img_feats: torch.Tensor,
                 txt_feats: torch.Tensor) -> torch.Tensor:
-        """
-        Args:
-            img_feats : (B, image_dim)
-            txt_feats : (B, text_dim)
-        Returns:
-            logits    : (B, num_classes)
-        """
-        img_h = self.img_proj(img_feats)       # (B, d_model)
-        txt_h = self.txt_proj(txt_feats)       # (B, d_model)
+        img_h = self.img_proj(img_feats)
+        txt_h = self.txt_proj(txt_feats)
 
-        # Unsqueeze to (B, 1, d_model) for MultiheadAttention
         img_q = img_h.unsqueeze(1)
         txt_q = txt_h.unsqueeze(1)
 
-        # Cross-attention
-        img_ctx = self.img_attends_txt(img_q, txt_q)   # (B, d_model)
-        txt_ctx = self.txt_attends_img(txt_q, img_q)   # (B, d_model)
+        img_ctx = self.img_attends_txt(img_q, txt_q)
+        txt_ctx = self.txt_attends_img(txt_q, img_q)
 
-        # Gating mechanism (element-wise sigmoid gate)
         img_gate = torch.sigmoid(self.img_gate(img_h))
         txt_gate = torch.sigmoid(self.txt_gate(txt_h))
 
         img_out = img_gate * img_ctx + (1 - img_gate) * img_h
         txt_out = txt_gate * txt_ctx + (1 - txt_gate) * txt_h
 
-        fused = torch.cat([img_out, txt_out], dim=-1)  # (B, 2*d_model)
-        return self.classifier(fused)                  # (B, num_classes)
+        fused = torch.cat([img_out, txt_out], dim=-1)
+        return self.classifier(fused)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -290,9 +242,7 @@ class AttentionFusionModel(nn.Module):
 class MultimodalEmotionModel(nn.Module):
     """
     Complete end-to-end multimodal model.
-
     Wraps an image encoder, a text encoder, and a fusion module.
-    Keeps encoders as sub-modules so gradients flow through them.
 
     Usage:
         model = MultimodalEmotionModel(
@@ -305,49 +255,59 @@ class MultimodalEmotionModel(nn.Module):
     def __init__(self, image_encoder, text_encoder,
                  fusion_type: str = "attention",
                  num_classes: int = 7,
-                 **fusion_kwargs):
+                 hidden_dim: int = 512,
+                 dropout: float = 0.3,
+                 d_model: int = 512,
+                 num_heads: int = 8,
+                 late_fusion_mode: str = "mlp"):
         super().__init__()
 
         self.image_encoder = image_encoder
         self.text_encoder  = text_encoder
 
-        img_dim = image_encoder.feature_dim   # e.g. 2048
-        txt_dim = text_encoder.feature_dim    # e.g. 768
+        img_dim = image_encoder.feature_dim
+        txt_dim = text_encoder.feature_dim
 
         if fusion_type == "early":
             self.fusion = EarlyFusionModel(
-                img_dim, txt_dim, num_classes=num_classes, **fusion_kwargs)
+                image_dim=img_dim, text_dim=txt_dim,
+                hidden_dim=hidden_dim, num_classes=num_classes, dropout=dropout)
         elif fusion_type == "late":
             self.fusion = LateFusionModel(
-                img_dim, txt_dim, num_classes=num_classes, **fusion_kwargs)
+                image_dim=img_dim, text_dim=txt_dim,
+                num_classes=num_classes, dropout=dropout, mode=late_fusion_mode)
         elif fusion_type == "attention":
             self.fusion = AttentionFusionModel(
-                img_dim, txt_dim, num_classes=num_classes, **fusion_kwargs)
+                image_dim=img_dim, text_dim=txt_dim,
+                d_model=d_model, num_heads=num_heads,
+                num_classes=num_classes, dropout=dropout)
         else:
-            raise ValueError(f"Unknown fusion_type: {fusion_type}")
+            raise ValueError(f"Unknown fusion_type: {fusion_type}. Choose from: early | late | attention")
 
         self.fusion_type = fusion_type
 
     def forward(self, images: torch.Tensor,
                 input_ids: torch.Tensor,
                 attention_mask: torch.Tensor | None = None) -> torch.Tensor:
-        """
-        Args:
-            images        : (B, 3, H, W)
-            input_ids     : (B, seq_len)  token ids
-            attention_mask: (B, seq_len)  for BERT; None for LSTM
-        Returns:
-            logits        : (B, num_classes)
-        """
         img_feats = self.image_encoder.extract_features(images)
 
-        # Support both BERT and LSTM text encoders
         if attention_mask is not None:
             txt_feats = self.text_encoder.extract_features(input_ids, attention_mask)
         else:
             txt_feats = self.text_encoder.extract_features(input_ids)
 
         return self.fusion(img_feats, txt_feats)
+
+    def predict(self, images: torch.Tensor,
+                input_ids: torch.Tensor,
+                attention_mask: torch.Tensor | None = None):
+        """Return (probabilities, predicted_class_indices)."""
+        self.eval()
+        with torch.no_grad():
+            logits = self.forward(images, input_ids, attention_mask)
+            probs = torch.softmax(logits, dim=-1)
+            preds = probs.argmax(dim=-1)
+        return probs, preds
 
 
 # ─── Quick test ───────────────────────────────────────────────────────────────

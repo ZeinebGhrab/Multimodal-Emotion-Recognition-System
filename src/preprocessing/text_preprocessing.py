@@ -385,3 +385,134 @@ if __name__ == "__main__":
     print(f"Vocab size: {len(vocab)}")
     encoded = vocab.encode(clean_text(sample_texts[0]), max_len=20)
     print(f"Encoded  : {encoded}")
+
+
+# ─── Additional helpers for train_bert.py / train_lstm.py ────────────────────
+
+def load_emotion_csv(path: str) -> "pd.DataFrame":
+    """Load a preprocessed emotion CSV with columns: text, label, emotion."""
+    return pd.read_csv(path)
+
+
+class LSTMEmotionDataset(Dataset):
+    """
+    PyTorch Dataset for BiLSTM training.
+
+    Args:
+        df         : DataFrame with 'text' and 'label' columns
+        vocab      : Vocabulary instance
+        max_length : maximum sequence length (pads / truncates)
+    """
+
+    def __init__(self, df: "pd.DataFrame", vocab: "Vocabulary", max_length: int = 128):
+        self.texts     = df["text"].tolist()
+        self.labels    = df["label"].tolist()
+        self.vocab     = vocab
+        self.max_length= max_length
+
+    def __len__(self):
+        return len(self.texts)
+
+    def __getitem__(self, idx):
+        tokens = self.texts[idx].split()[:self.max_length]
+        ids    = [self.vocab.word2idx.get(t, 1) for t in tokens]   # 1 = <UNK>
+
+        # Pad
+        pad_len = self.max_length - len(ids)
+        mask    = [1] * len(ids) + [0] * pad_len
+        ids     = ids + [0] * pad_len   # 0 = <PAD>
+
+        return {
+            "input_ids": torch.tensor(ids,  dtype=torch.long),
+            "mask":      torch.tensor(mask, dtype=torch.long),
+            "label":     torch.tensor(self.labels[idx], dtype=torch.long),
+        }
+
+
+def load_glove_embeddings(vocab: "Vocabulary", glove_path: str,
+                           embed_dim: int = 100) -> "torch.Tensor":
+    """
+    Load GloVe vectors for words in the vocabulary.
+    Words not found in GloVe are initialised to random vectors.
+
+    Returns:
+        FloatTensor of shape (vocab_size, embed_dim)
+    """
+    vectors = np.random.randn(len(vocab), embed_dim).astype(np.float32) * 0.01
+    found   = 0
+
+    with open(glove_path, encoding="utf-8") as f:
+        for line in f:
+            parts = line.strip().split()
+            word  = parts[0]
+            if word in vocab.word2idx:
+                idx = vocab.word2idx[word]
+                vectors[idx] = np.array(parts[1:], dtype=np.float32)
+                found += 1
+
+    print(f"[GloVe] Loaded {found}/{len(vocab)} vectors from {glove_path}")
+    return torch.FloatTensor(vectors)
+
+
+class BERTEmotionDataset(Dataset):
+    """
+    PyTorch Dataset for BERT training.
+
+    Args:
+        df         : DataFrame with 'text' and 'label' columns
+        tokenizer  : HuggingFace tokenizer
+        max_length : maximum token length
+    """
+
+    def __init__(self, df: "pd.DataFrame", tokenizer, max_length: int = 128):
+        self.texts     = df["text"].tolist()
+        self.labels    = df["label"].tolist()
+        self.tokenizer = tokenizer
+        self.max_length= max_length
+
+    def __len__(self):
+        return len(self.texts)
+
+    def __getitem__(self, idx):
+        enc = self.tokenizer(
+            self.texts[idx],
+            max_length=self.max_length,
+            padding="max_length",
+            truncation=True,
+            return_tensors="pt"
+        )
+        return {
+            "input_ids":      enc["input_ids"].squeeze(0),
+            "attention_mask": enc["attention_mask"].squeeze(0),
+            "label":          torch.tensor(self.labels[idx], dtype=torch.long),
+        }
+
+
+def get_bert_dataloaders(train_csv: str, val_csv: str, test_csv: str,
+                          model_name: str = "bert-base-uncased",
+                          max_length: int = 128,
+                          batch_size: int = 32) -> dict:
+    """
+    Build train / val / test DataLoaders for BERT training.
+
+    Returns:
+        dict with keys 'train', 'val', 'test'
+    """
+    from transformers import BertTokenizerFast
+    from torch.utils.data import DataLoader
+
+    tokenizer = BertTokenizerFast.from_pretrained(model_name)
+
+    loaders = {}
+    for name, path in [("train", train_csv), ("val", val_csv), ("test", test_csv)]:
+        df = load_emotion_csv(path)
+        ds = BERTEmotionDataset(df, tokenizer, max_length)
+        loaders[name] = DataLoader(
+            ds,
+            batch_size=batch_size,
+            shuffle=(name == "train"),
+            num_workers=2
+        )
+        print(f"[BERT DataLoader] {name}: {len(ds):,} samples")
+
+    return loaders
