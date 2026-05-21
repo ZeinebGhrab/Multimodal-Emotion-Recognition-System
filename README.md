@@ -54,7 +54,7 @@ multimodal_emotion_recognition/
 | Dataset | Task | Source |
 |---|---|---|
 | FER2013 | Facial expression (7 classes) | [Kaggle](https://www.kaggle.com/datasets/msambare/fer2013) |
-| Emotion NLP | Text emotion (6–7 classes) | [Kaggle — dair-ai/emotion](https://www.kaggle.com/datasets/parulpandey/emotion-dataset-for-nlp) |
+| Emotion NLP | Text emotion (6–7 classes) | [Hugging Face — dair-ai/emotion](https://huggingface.co/datasets/dair-ai/emotion) |
 | GloVe 6B | Word embeddings (100d) | [Stanford NLP](https://nlp.stanford.edu/data/glove.6B.zip) |
 
 Place downloaded files in `data/raw/`.
@@ -82,6 +82,8 @@ Place downloaded files in `data/raw/`.
 pip install -r requirements.txt
 
 # 2. Download & preprocess data
+#    FER2013 must be downloaded manually from Kaggle (see Datasets table above).
+#    The Emotion NLP dataset is downloaded automatically from Hugging Face.
 python scripts/preprocess_all.py
 
 # 3. Train individual models

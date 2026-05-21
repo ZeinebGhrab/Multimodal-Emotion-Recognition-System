@@ -45,6 +45,10 @@ NLP_TO_FER = {
 
 GLOVE_URL = "https://nlp.stanford.edu/data/glove.6B.zip"
 
+# dair-ai/emotion on HuggingFace (replaces the removed Kaggle mirror)
+HF_EMOTION_DATASET = "dair-ai/emotion"
+HF_EMOTION_CONFIG  = "split"          # use the pre-split version
+
 
 def parse_args():
     p = argparse.ArgumentParser(description="Preprocess FER2013 + Emotion NLP")
@@ -187,6 +191,51 @@ def download_glove(out_path: str, embed_dim: int = 100):
     print(f"  ✓ GloVe saved to {out_path}")
 
 
+# ─── Emotion NLP auto-download ───────────────────────────────────────────────
+
+def download_emotion_nlp(out_csv: str) -> str:
+    """
+    Download dair-ai/emotion from Hugging Face and save as a single CSV.
+
+    The dataset already provides train / validation / test splits;
+    we merge them and add a 'split' column so that
+    ``preprocess_emotion_nlp`` can honour the original splits instead
+    of re-splitting randomly.
+
+    Returns the path to the merged CSV.
+    """
+    print(f"\n{'─'*60}")
+    print(f"  Downloading dair-ai/emotion from Hugging Face …")
+    print(f"{'─'*60}")
+
+    try:
+        from datasets import load_dataset  # already in requirements.txt
+    except ImportError:
+        raise ImportError(
+            "The 'datasets' package is required for automatic download.\n"
+            "  pip install datasets>=2.17.0"
+        )
+
+    ds = load_dataset(HF_EMOTION_DATASET, HF_EMOTION_CONFIG)
+
+    label_names = ["sadness", "joy", "love", "anger", "fear", "surprise"]
+    frames = []
+    for split_name, split_ds in ds.items():
+        df = split_ds.to_pandas()
+        df["label_str"] = df["label"].map(lambda i: label_names[i])
+        df["split"]     = split_name          # 'train' | 'validation' | 'test'
+        frames.append(df)
+
+    merged = pd.concat(frames, ignore_index=True)
+    # Normalise 'validation' → 'val' so preprocess_emotion_nlp finds it
+    merged["split"] = merged["split"].replace("validation", "val")
+
+    os.makedirs(os.path.dirname(out_csv) or ".", exist_ok=True)
+    merged.to_csv(out_csv, index=False)
+    print(f"  ✓ Saved {len(merged):,} samples → {out_csv}")
+    return out_csv
+
+
 # ─── Main ─────────────────────────────────────────────────────────────────────
 
 def main():
@@ -229,9 +278,21 @@ def main():
         except Exception as e:
             errors.append(f"Emotion NLP error: {e}")
     else:
-        print(f"\n[SKIP] Emotion NLP dataset not found.")
-        print("       Download from: https://www.kaggle.com/datasets/parulpandey/emotion-dataset-for-nlp")
-        print("       Place the CSV (emotion.csv / training.csv) in:", data_raw)
+        # Auto-download from Hugging Face (former Kaggle mirror no longer exists)
+        auto_csv = os.path.join(data_raw, "emotion.csv")
+        print(f"\n[INFO] Emotion NLP dataset not found locally.")
+        print(f"       Attempting automatic download from Hugging Face ({HF_EMOTION_DATASET}) …")
+        try:
+            download_emotion_nlp(auto_csv)
+            preprocess_emotion_nlp(auto_csv, data_raw, args.val_ratio)
+        except Exception as e:
+            errors.append(f"Emotion NLP error: {e}")
+            print(f"\n[WARN] Auto-download failed: {e}")
+            print("       Manual alternative — download dair-ai/emotion from Hugging Face:")
+            print("         https://huggingface.co/datasets/dair-ai/emotion")
+            print("       Or via Python:  from datasets import load_dataset")
+            print(f"                      load_dataset('dair-ai/emotion', 'split')")
+            print("       Save the CSV as emotion.csv and place it in:", data_raw)
 
     # 3. GloVe
     glove_path = cfg["text"]["glove_path"]
