@@ -107,17 +107,34 @@ class BiLSTMClassifier(nn.Module):
         self.dropout = nn.Dropout(dropout)
         self.fc = nn.Linear(self.feature_dim, num_classes)
 
-    def extract_features(self, input_ids: torch.Tensor) -> torch.Tensor:
-        """Return the attention-pooled LSTM representation (B, hidden*2)."""
-        emb = self.dropout(self.embedding(input_ids))   # (B, T, E)
-        lstm_out, _ = self.lstm(emb)                    # (B, T, H*2)
-        mask = (input_ids != 0).long()                  # (B, T)
-        pooled = self.attention(lstm_out, mask)          # (B, H*2)
+    def extract_features(self, input_ids: torch.Tensor,
+                         mask: torch.Tensor | None = None) -> torch.Tensor:
+        """Return the attention-pooled LSTM representation (B, hidden*2).
+
+        Args:
+            input_ids : (B, T) token indices
+            mask      : (B, T) optional attention mask — 1 for real tokens,
+                        0 for padding. When omitted, derived from input_ids != 0.
+        """
+        emb = self.dropout(self.embedding(input_ids))        # (B, T, E)
+        lstm_out, _ = self.lstm(emb)                         # (B, T, H*2)
+        if mask is None:
+            mask = (input_ids != 0).long()                   # (B, T)
+        pooled = self.attention(lstm_out, mask)               # (B, H*2)
         return self.norm(pooled)
 
-    def forward(self, input_ids: torch.Tensor) -> torch.Tensor:
-        features = self.extract_features(input_ids)      # (B, H*2)
-        return self.fc(self.dropout(features))           # (B, num_classes)
+    def forward(self, input_ids: torch.Tensor,
+                mask: torch.Tensor | None = None) -> torch.Tensor:
+        """
+        Args:
+            input_ids : (B, T) token indices
+            mask      : (B, T) optional padding mask from the DataLoader
+                        (1 = real token, 0 = pad). Passed through to
+                        AttentionPooling so padded positions are excluded
+                        from the attention softmax.
+        """
+        features = self.extract_features(input_ids, mask)    # (B, H*2)
+        return self.fc(self.dropout(features))               # (B, num_classes)
 
 
 # ═══════════════════════════════════════════════════════════════════════════════
@@ -299,11 +316,14 @@ if __name__ == "__main__":
     # BiLSTM test
     lstm_model = BiLSTMClassifier(vocab_size=5000, embed_dim=100,
                                    hidden_size=256, num_classes=7).to(device)
-    ids = torch.randint(0, 5000, (B, T)).to(device)
-    out = lstm_model(ids)
-    print(f"BiLSTM output: {out.shape}")  # (4, 7)
-    feats = lstm_model.extract_features(ids)
-    print(f"BiLSTM feats : {feats.shape}")  # (4, 512)
+    ids  = torch.randint(0, 5000, (B, T)).to(device)
+    mask = (ids != 0).long()
+    out  = lstm_model(ids, mask)
+    print(f"BiLSTM output (with mask) : {out.shape}")   # (4, 7)
+    out2 = lstm_model(ids)
+    print(f"BiLSTM output (no mask)   : {out2.shape}")  # (4, 7)
+    feats = lstm_model.extract_features(ids, mask)
+    print(f"BiLSTM feats              : {feats.shape}")  # (4, 512)
 
     # BERT test (without downloading weights)
     config = BertConfig(vocab_size=1000, hidden_size=128, num_hidden_layers=2,
