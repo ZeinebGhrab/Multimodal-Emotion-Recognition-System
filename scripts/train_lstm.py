@@ -177,9 +177,9 @@ def main():
         val_csv  = os.path.join(cfg["paths"]["data_raw"], "emotion_val.csv")
         test_csv = os.path.join(cfg["paths"]["data_raw"], "emotion_test.csv")
 
-        train_ds = LSTMEmotionDataset(train_df, vocab, max_length)
-        val_ds   = LSTMEmotionDataset(load_emotion_csv(val_csv),  vocab, max_length)
-        test_ds  = LSTMEmotionDataset(load_emotion_csv(test_csv), vocab, max_length)
+        train_ds = LSTMEmotionDataset(train_df,                   vocab, max_length=max_length)
+        val_ds   = LSTMEmotionDataset(load_emotion_csv(val_csv),  vocab, max_length=max_length)
+        test_ds  = LSTMEmotionDataset(load_emotion_csv(test_csv), vocab, max_length=max_length)
 
         loaders = {
             "train": DataLoader(train_ds, batch_size=batch_size, shuffle=True, num_workers=2),
