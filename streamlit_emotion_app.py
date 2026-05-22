@@ -252,11 +252,19 @@ def dispatch_tool(tool_name: str, tool_input: dict) -> str:
     }
 
     if tool_name == "analyze_image":
-        result = tool_analyze_image(tool_input["image_path"])
+        path = tool_input.get("image_path", "")
+        if not path or not Path(path).exists():
+            result = {"error": "Aucune image disponible. Utilise analyze_text pour analyser le texte uniquement."}
+        else:
+            result = tool_analyze_image(path)
     elif tool_name == "analyze_text":
         result = tool_analyze_text(tool_input["text"])
     elif tool_name == "analyze_multimodal":
-        result = tool_analyze_multimodal(tool_input["image_path"], tool_input["text"])
+        path = tool_input.get("image_path", "")
+        if not path or not Path(path).exists():
+            result = {"error": "Aucune image disponible. Utilise analyze_text pour analyser le texte uniquement."}
+        else:
+            result = tool_analyze_multimodal(path, tool_input["text"])
     elif tool_name == "generate_report":
         result = tool_generate_report(
             emotion=tool_input.get("emotion", "neutral"),
@@ -315,6 +323,8 @@ def run_agent(user_message: str, image_path: str = None) -> str:
     content = user_message
     if image_path:
         content += f"\n\n[Image fournie : {image_path}]"
+    else:
+        content += "\n\n[IMPORTANT : Aucune image fournie. Tu DOIS appeler uniquement analyze_text — NE PAS appeler analyze_image ni analyze_multimodal.]"
 
     messages = [
         {"role": "system", "content": st.session_state.system_prompt},
@@ -500,7 +510,7 @@ with tab_analyse:
         )
 
         if uploaded_image:
-            st.image(uploaded_image, use_container_width=True)
+            st.image(uploaded_image, use_column_width=True)
 
         # Mode indicator
         st.markdown('<div style="margin-top:0.8rem"></div>', unsafe_allow_html=True)
@@ -709,7 +719,7 @@ with tab_agent:
             elif stype == "final":
                 st.markdown(
                     f'<div class="trace-step final">'
-                    f'<div class="trace-label final">✅ [{ts}] Réponse finale</div>'
+                    f'<div class="trace-label final"> [{ts}] Réponse finale</div>'
                     f'Réponse générée — {len(step.get("text",""))} caractères'
                     f'</div>',
                     unsafe_allow_html=True,
