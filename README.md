@@ -479,15 +479,15 @@ All models use `CrossEntropyLoss(label_smoothing=0.1)` to prevent overconfidence
 ### 10.1 Architecture
 
 ```
-User input (text? image? both?)
-        │
-        ▼
-┌───────────────────┐
-│  Ollama LLM       │  ◄── System prompt (role + decision rules)
-│  (llama3.2, etc.) │
-└────────┬──────────┘
-         │  Tool call?
-    ┌────▼──────────────────────────────────────────┐
+    User input (text? image? both?)
+                  │
+                  ▼
+          ┌──────────────────┐
+          │ Ollama LLM       │  ◄── System prompt (role + decision rules)
+          │ (llama3.2, etc.) │
+          └───────┬──────────┘
+                  │  Tool call?
+    ┌─────────────▼──────────────────────────────────┐
     │  Tool Dispatcher                               │
     │                                                │
     │  analyze_text       → FastAPI /predict/text    │
@@ -495,9 +495,9 @@ User input (text? image? both?)
     │  analyze_multimodal → FastAPI /predict/mm      │
     │  generate_report    → rule-based (no API call) │
     └────────────────────────────────────────────────┘
-         │  Observation (JSON result)
-         ▼
-   Next iteration  ──► Final answer when no tool called
+                  │  Observation (JSON result)
+                  ▼
+    Next iteration  ──► Final answer when no tool called
 ```
 
 ### 10.2 Agent Decision Logic
