@@ -904,6 +904,6 @@ Based on typical FER2013 results:
 ## 16. 👤 Author
 
 **Zeineb Ghrab**
-Data & Decisional Systems Engineer Student
 
+Data & Decisional Systems Engineer Student
 National School of Electronics and Telecommunications of Sfax (ENET'Com)
