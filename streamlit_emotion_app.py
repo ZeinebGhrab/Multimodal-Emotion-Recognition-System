@@ -447,18 +447,18 @@ def tool_analyze_multimodal(image_path: str, text: str) -> dict:
         return _api_call("predict/multimodal", method="post", files=files, data=data)
 
 
-def tool_generate_report(emotion: str, scores: dict, user_text: str = "") -> dict:
+def tool_generate_report(emotion: str, scores, user_text: str = "") -> dict:
     """Fallback rule-based report (no API call needed for report)."""
+    # Ollama retourne parfois scores comme chaîne JSON → on parse défensivement
+    if isinstance(scores, str):
+        try:
+            scores = json.loads(scores)
+        except (json.JSONDecodeError, ValueError):
+            scores = {}
+    if not isinstance(scores, dict) or not scores:
+        scores = {emotion: 1.0}
+
     top3 = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:3]
-    meta = EMOTION_META.get(emotion, {})
-    return {
-        "emotion": emotion,
-        "label_fr": meta.get("label", emotion),
-        "confidence": scores.get(emotion, 0),
-        "top_3": [{"emotion": e, "score": s} for e, s in top3],
-        "summary": f"L'émotion dominante détectée est '{meta.get('label', emotion)}' avec une confiance de {scores.get(emotion, 0)*100:.1f}%.",
-        "user_text_context": user_text[:200] if user_text else None,
-    }
 
 
 def dispatch_tool(tool_name: str, tool_input: dict) -> str:
@@ -471,9 +471,9 @@ def dispatch_tool(tool_name: str, tool_input: dict) -> str:
         result = tool_analyze_multimodal(tool_input["image_path"], tool_input["text"])
     elif tool_name == "generate_report":
         result = tool_generate_report(
-            emotion=tool_input["emotion"],
-            scores=tool_input["scores"],
-            user_text=tool_input.get("user_text", "")
+            emotion=tool_input.get("emotion", "neutral"),
+            scores=tool_input.get("scores", {}),
+            user_text=tool_input.get("user_text", ""),
         )
     else:
         result = {"error": f"Outil inconnu : {tool_name}"}
