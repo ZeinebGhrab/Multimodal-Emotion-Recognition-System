@@ -6,7 +6,7 @@ data/processed/
 *.txt
 
 # models
-outputs/
+outputs/checkpoints
 *.pt
 *.bin
 
