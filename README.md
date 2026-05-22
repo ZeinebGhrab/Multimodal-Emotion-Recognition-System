@@ -109,6 +109,7 @@ multimodal_emotion_recognition/
 │
 └── outputs/
     ├── checkpoints/                 # Saved model weights (.pt)
+    ├── figures/                     # Plots, confusion matrices, training curves
     │   ├── bert_training_curves.png
     │   ├── bert_confusion_matrix.png
     │   ├── cnn_training_curves.png
@@ -119,7 +120,6 @@ multimodal_emotion_recognition/
     │       ├── bert_training_terminal.png
     │       ├── cnn_training_terminal.png
     │       └── lstm_training_terminal.png
-    ├── figures/                     # Plots, confusion matrices, training curves
     └── reports/                     # Generated JSON emotion reports
 ```
 
