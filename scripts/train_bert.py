@@ -7,7 +7,7 @@ Usage:
     python scripts/train_bert.py
     python scripts/train_bert.py --epochs 5 --lr 2e-5 --batch_size 16
     python scripts/train_bert.py --model_name distilbert-base-uncased
-    python scripts/train_bert.py --weight_decay 0.005 --patience 5
+    python scripts/train_bert.py --weight_decay 0.005 --patience 4
 """
 
 import os

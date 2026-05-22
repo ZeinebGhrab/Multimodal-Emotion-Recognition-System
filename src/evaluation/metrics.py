@@ -29,7 +29,7 @@ EMOTION_LABELS = ["angry", "disgust", "fear", "happy", "neutral", "sad", "surpri
 # ─── Core metrics ─────────────────────────────────────────────────────────────
 
 def compute_metrics(y_true: list, y_pred: list,
-                    labels: list[str] = EMOTION_LABELS) -> dict:
+                    labels: list = EMOTION_LABELS) -> dict:
     """
     Compute a full suite of classification metrics.
 
@@ -37,17 +37,24 @@ def compute_metrics(y_true: list, y_pred: list,
       accuracy, macro_precision, macro_recall, macro_f1,
       per_class (list of dicts per class),
       confusion_matrix (2-D list)
+
+    FIX: passes labels=all_labels to precision_recall_fscore_support so that
+    classes absent from y_pred (e.g. 'disgust'/'neutral' when using the NLP
+    dataset) are still included with score=0, preventing an IndexError.
     """
     acc = accuracy_score(y_true, y_pred)
 
+    num_classes = len(labels)
+    all_labels  = list(range(num_classes))   # ← FIX: force all 7 indices
+
     prec, rec, f1, support = precision_recall_fscore_support(
-        y_true, y_pred, average=None, zero_division=0
+        y_true, y_pred, average=None, labels=all_labels, zero_division=0
     )
     macro_prec, macro_rec, macro_f1, _ = precision_recall_fscore_support(
-        y_true, y_pred, average="macro", zero_division=0
+        y_true, y_pred, average="macro", labels=all_labels, zero_division=0
     )
 
-    cm = confusion_matrix(y_true, y_pred).tolist()
+    cm = confusion_matrix(y_true, y_pred, labels=all_labels).tolist()
 
     per_class = [
         {
@@ -57,10 +64,12 @@ def compute_metrics(y_true: list, y_pred: list,
             "f1":        float(f1[i]),
             "support":   int(support[i])
         }
-        for i in range(len(labels))
+        for i in range(num_classes)
     ]
 
-    report = classification_report(y_true, y_pred, target_names=labels)
+    report = classification_report(
+        y_true, y_pred, target_names=labels, labels=all_labels, zero_division=0
+    )
     print(report)
 
     return {
@@ -115,8 +124,8 @@ def _style():
     })
 
 
-def plot_confusion_matrix(cm: list[list], labels: list[str],
-                           title: str, save_path: str, normalize: bool = True):
+def plot_confusion_matrix(cm, labels, title="Confusion Matrix",
+                           save_path=None, normalize=True):
     """
     Plot a heatmap of the confusion matrix.
 
@@ -127,7 +136,8 @@ def plot_confusion_matrix(cm: list[list], labels: list[str],
     _style()
     cm_arr = np.array(cm, dtype=float)
     if normalize:
-        cm_arr = cm_arr / (cm_arr.sum(axis=1, keepdims=True) + 1e-8)
+        row_sums = cm_arr.sum(axis=1, keepdims=True)
+        cm_arr   = np.divide(cm_arr, row_sums, where=row_sums != 0)
         fmt, vmax = ".2f", 1.0
     else:
         fmt, vmax = "d", cm_arr.max()
@@ -144,15 +154,16 @@ def plot_confusion_matrix(cm: list[list], labels: list[str],
     ax.set_xlabel("Predicted", fontsize=12)
     ax.set_ylabel("True", fontsize=12)
     plt.tight_layout()
-    os.makedirs(os.path.dirname(save_path), exist_ok=True)
-    plt.savefig(save_path, dpi=150, bbox_inches="tight")
+
+    if save_path:
+        os.makedirs(os.path.dirname(save_path) or ".", exist_ok=True)
+        plt.savefig(save_path, dpi=150, bbox_inches="tight")
+        print(f"[Plot] Confusion matrix → {save_path}")
     plt.close()
-    print(f"[Plot] Confusion matrix → {save_path}")
 
 
-def plot_training_curves(train_losses: list, val_losses: list,
-                          train_accs: list, val_accs: list,
-                          model_name: str, save_path: str):
+def plot_training_curves(train_losses, val_losses, train_accs, val_accs,
+                          model_name="Model", save_path=None):
     """Plot loss and accuracy curves for train and validation sets."""
     _style()
     epochs = range(1, len(train_losses) + 1)
@@ -181,10 +192,12 @@ def plot_training_curves(train_losses: list, val_losses: list,
 
     fig.suptitle(f"Training Curves — {model_name}", fontsize=14, y=1.01)
     plt.tight_layout()
-    os.makedirs(os.path.dirname(save_path), exist_ok=True)
-    plt.savefig(save_path, dpi=150, bbox_inches="tight")
+
+    if save_path:
+        os.makedirs(os.path.dirname(save_path) or ".", exist_ok=True)
+        plt.savefig(save_path, dpi=150, bbox_inches="tight")
+        print(f"[Plot] Training curves → {save_path}")
     plt.close()
-    print(f"[Plot] Training curves → {save_path}")
 
 
 def plot_model_comparison(results: dict, save_path: str):
@@ -230,7 +243,7 @@ def plot_model_comparison(results: dict, save_path: str):
 
 
 def plot_per_class_f1(metrics_dict: dict, model_name: str,
-                      labels: list[str], save_path: str):
+                      labels: list, save_path: str):
     """Horizontal bar chart of per-class F1 scores."""
     _style()
     f1_scores = [c["f1"] * 100 for c in metrics_dict["per_class"]]
@@ -251,132 +264,9 @@ def plot_per_class_f1(metrics_dict: dict, model_name: str,
     ax.set_title(f"Per-class F1 — {model_name}", fontsize=13)
     ax.grid(axis="x", alpha=0.3)
     plt.tight_layout()
-    os.makedirs(os.path.dirname(save_path), exist_ok=True)
-    plt.savefig(save_path, dpi=150, bbox_inches="tight")
-    plt.close()
-    print(f"[Plot] Per-class F1 → {save_path}")
-
-
-# ─── Demo ─────────────────────────────────────────────────────────────────────
-
-if __name__ == "__main__":
-    import random
-    random.seed(0)
-
-    n = 500
-    y_true = [random.randint(0, 6) for _ in range(n)]
-    y_pred = [t if random.random() > 0.35 else random.randint(0, 6) for t in y_true]
-
-    m = compute_metrics(y_true, y_pred)
-    print(f"\nAccuracy : {m['accuracy']*100:.2f}%")
-    print(f"Macro F1 : {m['macro_f1']*100:.2f}%")
-
-    os.makedirs("outputs/figures", exist_ok=True)
-    plot_confusion_matrix(m["confusion_matrix"], EMOTION_LABELS,
-                           "Demo Confusion Matrix", "outputs/figures/demo_cm.png")
-
-    # Simulated training curves
-    tl = [2.0 * (0.85**e) for e in range(20)]
-    vl = [2.1 * (0.87**e) for e in range(20)]
-    ta = [0.3 + 0.6 * (1 - 0.85**e) for e in range(20)]
-    va = [0.28 + 0.55 * (1 - 0.87**e) for e in range(20)]
-
-    plot_training_curves(tl, vl, ta, va, "Demo CNN", "outputs/figures/demo_curves.png")
-
-    # Model comparison with simulated data
-    fake_results = {
-        "CNN":               {"accuracy": 0.65, "macro_f1": 0.62, "macro_precision": 0.63, "macro_recall": 0.62},
-        "ViT":               {"accuracy": 0.68, "macro_f1": 0.66, "macro_precision": 0.67, "macro_recall": 0.66},
-        "Bi-LSTM":           {"accuracy": 0.70, "macro_f1": 0.68, "macro_precision": 0.69, "macro_recall": 0.68},
-        "BERT":              {"accuracy": 0.78, "macro_f1": 0.76, "macro_precision": 0.77, "macro_recall": 0.76},
-        "Early Fusion":      {"accuracy": 0.80, "macro_f1": 0.79, "macro_precision": 0.79, "macro_recall": 0.79},
-        "Late Fusion":       {"accuracy": 0.81, "macro_f1": 0.80, "macro_precision": 0.80, "macro_recall": 0.80},
-        "Attention Fusion":  {"accuracy": 0.83, "macro_f1": 0.82, "macro_precision": 0.82, "macro_recall": 0.82},
-    }
-    plot_model_comparison(fake_results, "outputs/figures/model_comparison.png")
-    print("\nAll demo plots generated in outputs/figures/")
-
-
-# ─── Plotting helpers ─────────────────────────────────────────────────────────
-
-def plot_confusion_matrix(cm: list, labels: list, title: str = "Confusion Matrix",
-                           save_path: str = None, normalize: bool = True):
-    """
-    Plot a confusion matrix using seaborn heatmap.
-
-    Args:
-        cm        : 2-D list (confusion_matrix output)
-        labels    : list of class names
-        title     : plot title
-        save_path : if set, save figure to this path
-        normalize : show row-normalized percentages
-    """
-    import numpy as np
-    cm_arr = np.array(cm, dtype=float)
-
-    if normalize:
-        row_sums = cm_arr.sum(axis=1, keepdims=True)
-        cm_norm  = np.divide(cm_arr, row_sums, where=row_sums != 0)
-        fmt, data = ".2f", cm_norm
-    else:
-        fmt, data = "d", cm_arr.astype(int)
-
-    fig, ax = plt.subplots(figsize=(9, 7))
-    sns.heatmap(data, annot=True, fmt=fmt,
-                xticklabels=labels, yticklabels=labels,
-                cmap="Blues", ax=ax, linewidths=0.5)
-    ax.set_title(title, fontsize=13, fontweight="bold")
-    ax.set_xlabel("Predicted", fontsize=11)
-    ax.set_ylabel("True",      fontsize=11)
-    plt.tight_layout()
 
     if save_path:
         os.makedirs(os.path.dirname(save_path) or ".", exist_ok=True)
         plt.savefig(save_path, dpi=150, bbox_inches="tight")
-        print(f"[Metrics] Confusion matrix saved → {save_path}")
-    plt.close()
-
-
-def plot_training_curves(train_losses: list, val_losses: list,
-                          train_accs: list,  val_accs: list,
-                          model_name: str = "Model",
-                          save_path: str = None):
-    """
-    Plot loss and accuracy curves over training epochs.
-
-    Args:
-        train_losses / val_losses : per-epoch loss values
-        train_accs   / val_accs   : per-epoch accuracy values (0–1)
-        model_name                : used in plot title
-        save_path                 : if set, save figure to this path
-    """
-    epochs = range(1, len(train_losses) + 1)
-
-    fig, (ax1, ax2) = plt.subplots(1, 2, figsize=(14, 5))
-
-    # Loss
-    ax1.plot(epochs, train_losses, label="Train", linewidth=2, color="#4C72B0")
-    ax1.plot(epochs, val_losses,   label="Val",   linewidth=2, color="#DD8452",
-             linestyle="--")
-    ax1.set_title(f"{model_name} — Loss", fontsize=12, fontweight="bold")
-    ax1.set_xlabel("Epoch"); ax1.set_ylabel("Loss")
-    ax1.legend(); ax1.grid(alpha=0.3)
-
-    # Accuracy
-    ax2.plot(epochs, [a * 100 for a in train_accs],
-             label="Train", linewidth=2, color="#4C72B0")
-    ax2.plot(epochs, [a * 100 for a in val_accs],
-             label="Val",   linewidth=2, color="#DD8452", linestyle="--")
-    ax2.set_title(f"{model_name} — Accuracy", fontsize=12, fontweight="bold")
-    ax2.set_xlabel("Epoch"); ax2.set_ylabel("Accuracy (%)")
-    ax2.set_ylim(0, 100)
-    ax2.legend(); ax2.grid(alpha=0.3)
-
-    plt.suptitle(f"{model_name} Training", fontsize=14, fontweight="bold", y=1.02)
-    plt.tight_layout()
-
-    if save_path:
-        os.makedirs(os.path.dirname(save_path) or ".", exist_ok=True)
-        plt.savefig(save_path, dpi=150, bbox_inches="tight")
-        print(f"[Metrics] Training curves saved → {save_path}")
+        print(f"[Plot] Per-class F1 → {save_path}")
     plt.close()

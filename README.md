@@ -528,7 +528,7 @@ Validation loss is a smoother, more informative signal than accuracy. Accuracy i
 ```yaml
 training:
   early_stopping:
-    patience: 7          # Epochs without improvement before stopping
+    patience: 4          # Epochs without improvement before stopping
     min_delta: 0.001     # Minimum change to count as improvement
     monitor: "val_loss"  # "val_loss" (mode=min) | "val_acc" (mode=max)
     restore_best: true   # Reload best weights automatically on stop
