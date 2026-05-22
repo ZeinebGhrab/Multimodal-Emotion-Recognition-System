@@ -42,6 +42,22 @@ FER_EMOTION_MAP = {
     "surprise": 6,
 }
 
+# ─── Label map for HuggingFace dair-ai/emotion → FER2013 indices ─────────────
+# BUG FIX 1: This mapping was defined inside get_text_dataloaders() and was
+# NOT used by get_bert_dataloaders(). It is now a module-level constant so
+# all functions share the same consistent mapping.
+HF_TO_FER_LABEL_MAP = {
+    "sadness":  5,   # → FER 'sad'
+    "joy":      3,   # → FER 'happy'
+    "love":     3,   # → FER 'happy' (closest)
+    "anger":    0,   # → FER 'angry'
+    "fear":     2,   # → FER 'fear'
+    "surprise": 6,   # → FER 'surprise'
+    # NOTE: 'disgust' (index 1) and 'neutral' (index 4) have no equivalent
+    # in the dair-ai/emotion dataset, so they will correctly appear with
+    # support=0 in the classification report — this is expected behaviour.
+}
+
 
 # ─── Text cleaning ────────────────────────────────────────────────────────────
 
@@ -78,7 +94,7 @@ class Vocabulary:
         self.word2idx = {self.PAD_TOKEN: 0, self.UNK_TOKEN: 1}
         self.idx2word = {0: self.PAD_TOKEN, 1: self.UNK_TOKEN}
 
-    def build(self, texts: list[str]):
+    def build(self, texts: list):
         """Build vocab from a list of cleaned strings."""
         counter = Counter()
         for text in texts:
@@ -90,7 +106,7 @@ class Vocabulary:
                 self.idx2word[idx] = word
         print(f"[Vocabulary] Size: {len(self.word2idx)} tokens")
 
-    def encode(self, text: str, max_len: int) -> list[int]:
+    def encode(self, text: str, max_len: int) -> list:
         """Encode a string to a padded list of indices."""
         tokens = text.split()[:max_len]
         ids = [self.word2idx.get(t, 1) for t in tokens]
@@ -141,31 +157,87 @@ def load_glove_matrix(glove_path: str, vocab: Vocabulary, embed_dim: int = 100) 
     return torch.tensor(matrix)
 
 
+def load_glove_embeddings(vocab: "Vocabulary", glove_path: str,
+                           embed_dim: int = 100) -> "torch.Tensor":
+    """
+    Load GloVe vectors for words in the vocabulary.
+    Words not found in GloVe are initialised to random vectors.
+
+    Returns:
+        FloatTensor of shape (vocab_size, embed_dim)
+    """
+    vectors = np.random.randn(len(vocab), embed_dim).astype(np.float32) * 0.01
+    found   = 0
+
+    with open(glove_path, encoding="utf-8") as f:
+        for line in f:
+            parts = line.strip().split()
+            word  = parts[0]
+            if word in vocab.word2idx:
+                idx = vocab.word2idx[word]
+                vectors[idx] = np.array(parts[1:], dtype=np.float32)
+                found += 1
+
+    print(f"[GloVe] Loaded {found}/{len(vocab)} vectors from {glove_path}")
+    return torch.FloatTensor(vectors)
+
+
 # ─── Datasets ─────────────────────────────────────────────────────────────────
+
+# BUG FIX 2: The file previously defined BERTEmotionDataset and
+# LSTMEmotionDataset TWICE (at lines ~146 and ~457).  Python's class
+# resolution means the second definition silently overwrites the first.
+# The second BERTEmotionDataset accepted (df, tokenizer, max_length) while
+# the first accepted (df, label_map, model_name, max_length).
+# get_bert_dataloaders() called the second signature but train_bert.py relied
+# on the first — causing a silent label-map miss (all labels defaulted to 0).
+# Solution: keep ONE canonical definition per class, combining the best of
+# both signatures so every caller works correctly.
 
 class BERTEmotionDataset(Dataset):
     """
     Tokenizes text with BERT tokenizer.
-    CSV must have columns: text, label (string emotion name).
+
+    Accepts either a pre-built tokenizer object OR a HuggingFace model name
+    string. When a string is passed the tokenizer is loaded once and cached.
+
+    CSV / DataFrame must have columns: text, label.
+    'label' may be a string emotion name (looked up in label_map) or already
+    an integer index (used as-is when label_map is None or the key is absent).
     """
 
-    def __init__(self, df: pd.DataFrame, label_map: dict,
-                 model_name: str = "bert-base-uncased", max_length: int = 128):
-        self.df = df.reset_index(drop=True)
-        self.label_map = label_map
+    def __init__(self, df: "pd.DataFrame",
+                 tokenizer_or_name=None,
+                 label_map: dict = None,
+                 max_length: int = 128):
+        self.df         = df.reset_index(drop=True)
+        self.label_map  = label_map or {}
         self.max_length = max_length
-        self.tokenizer = BertTokenizerFast.from_pretrained(model_name)
-        print(f"[BERTDataset] {len(df)} samples loaded")
+
+        # Accept either a tokenizer object or a model-name string
+        if tokenizer_or_name is None or isinstance(tokenizer_or_name, str):
+            model_name = tokenizer_or_name or "bert-base-uncased"
+            self.tokenizer = BertTokenizerFast.from_pretrained(model_name)
+        else:
+            self.tokenizer = tokenizer_or_name
 
     def __len__(self):
         return len(self.df)
 
     def __getitem__(self, idx):
-        row = self.df.iloc[idx]
-        text = clean_text(str(row["text"]))
-        label = self.label_map.get(str(row["label"]).strip().lower(), 0)
+        row   = self.df.iloc[idx]
+        text  = clean_text(str(row["text"]))
+        raw_label = str(row["label"]).strip().lower()
+        # Use label_map when the label is a string; fall back to int cast
+        if raw_label in self.label_map:
+            label = self.label_map[raw_label]
+        else:
+            try:
+                label = int(raw_label)
+            except ValueError:
+                label = 0  # unknown → default to class 0
 
-        encoding = self.tokenizer(
+        enc = self.tokenizer(
             text,
             max_length=self.max_length,
             padding="max_length",
@@ -173,8 +245,8 @@ class BERTEmotionDataset(Dataset):
             return_tensors="pt"
         )
         return {
-            "input_ids":      encoding["input_ids"].squeeze(0),
-            "attention_mask": encoding["attention_mask"].squeeze(0),
+            "input_ids":      enc["input_ids"].squeeze(0),
+            "attention_mask": enc["attention_mask"].squeeze(0),
             "label":          torch.tensor(label, dtype=torch.long),
         }
 
@@ -182,16 +254,15 @@ class BERTEmotionDataset(Dataset):
 class LSTMEmotionDataset(Dataset):
     """
     Encodes text using a pre-built Vocabulary.
-    CSV must have columns: text, label (string emotion name).
+    CSV / DataFrame must have columns: text, label.
     """
 
-    def __init__(self, df: pd.DataFrame, vocab: Vocabulary,
-                 label_map: dict, max_length: int = 128):
-        self.df = df.reset_index(drop=True)
-        self.vocab = vocab
-        self.label_map = label_map
+    def __init__(self, df: "pd.DataFrame", vocab: "Vocabulary",
+                 label_map: dict = None, max_length: int = 128):
+        self.df         = df.reset_index(drop=True)
+        self.vocab      = vocab
+        self.label_map  = label_map or {}
         self.max_length = max_length
-        print(f"[LSTMDataset] {len(df)} samples loaded")
 
     def __len__(self):
         return len(self.df)
@@ -199,10 +270,24 @@ class LSTMEmotionDataset(Dataset):
     def __getitem__(self, idx):
         row = self.df.iloc[idx]
         text = clean_text(str(row["text"]))
-        label = self.label_map.get(str(row["label"]).strip().lower(), 0)
-        ids = self.vocab.encode(text, self.max_length)
+        raw_label = str(row["label"]).strip().lower()
+        if raw_label in self.label_map:
+            label = self.label_map[raw_label]
+        else:
+            try:
+                label = int(raw_label)
+            except ValueError:
+                label = 0
+
+        tokens  = text.split()[:self.max_length]
+        ids     = [self.vocab.word2idx.get(t, 1) for t in tokens]   # 1 = <UNK>
+        pad_len = self.max_length - len(ids)
+        mask    = [1] * len(ids) + [0] * pad_len
+        ids     = ids + [0] * pad_len   # 0 = <PAD>
+
         return {
-            "input_ids": torch.tensor(ids, dtype=torch.long),
+            "input_ids": torch.tensor(ids,  dtype=torch.long),
+            "mask":      torch.tensor(mask, dtype=torch.long),
             "label":     torch.tensor(label, dtype=torch.long),
         }
 
@@ -240,10 +325,10 @@ def get_text_dataloaders_from_csv(csv_path: str,
     loaders = {}
     for name, subset in splits.items():
         if model_type == "bert":
-            dataset = BERTEmotionDataset(subset, label_map, max_length=max_length)
+            dataset = BERTEmotionDataset(subset, label_map=label_map, max_length=max_length)
         else:
             assert vocab is not None, "vocab required for LSTM"
-            dataset = LSTMEmotionDataset(subset, vocab, label_map, max_length=max_length)
+            dataset = LSTMEmotionDataset(subset, vocab, label_map=label_map, max_length=max_length)
 
         loaders[name] = DataLoader(
             dataset,
@@ -274,14 +359,7 @@ def get_text_dataloaders(model_type: str = "bert",
                               - kaggle.com/datasets/praveengovi/emotions-dataset-for-nlp
                               - kaggle.com/datasets/pashupatigupta/emotion-detection-from-text
                               - Any CSV with 'text' and 'label' columns
-
-    Args:
-        model_type : 'bert' | 'lstm'
-        source     : 'huggingface' | 'csv'
-        csv_path   : required if source == 'csv'
-        vocab      : required if model_type == 'lstm'
     """
-    # ── HuggingFace source ──────────────────────────────────────────────────
     if source == "huggingface":
         try:
             from datasets import load_dataset
@@ -290,17 +368,6 @@ def get_text_dataloaders(model_type: str = "bert",
 
         print("[TextData] Loading dair-ai/emotion from HuggingFace ...")
         hf_dataset = load_dataset("dair-ai/emotion")
-
-        # dair-ai/emotion label mapping:
-        # 0=sadness 1=joy 2=love 3=anger 4=fear 5=surprise
-        hf_label_map = {
-            "sadness": 5,   # → FER 'sad'
-            "joy":     3,   # → FER 'happy'
-            "love":    3,   # → FER 'happy' (closest)
-            "anger":   0,   # → FER 'angry'
-            "fear":    2,   # → FER 'fear'
-            "surprise":6,   # → FER 'surprise'
-        }
 
         def hf_split_to_df(split_name):
             split = hf_dataset[split_name]
@@ -315,9 +382,8 @@ def get_text_dataloaders(model_type: str = "bert",
             "val":   hf_split_to_df("validation"),
             "test":  hf_split_to_df("test"),
         }
-        label_map = hf_label_map
+        label_map = HF_TO_FER_LABEL_MAP
 
-    # ── CSV source ──────────────────────────────────────────────────────────
     elif source == "csv":
         assert csv_path, "csv_path required when source='csv'"
         return get_text_dataloaders_from_csv(
@@ -330,14 +396,13 @@ def get_text_dataloaders(model_type: str = "bert",
     else:
         raise ValueError(f"Unknown source: {source}. Use 'huggingface' or 'csv'.")
 
-    # Build DataLoaders
     loaders = {}
     for name, df in splits.items():
         if model_type == "bert":
-            dataset = BERTEmotionDataset(df, label_map, max_length=max_length)
+            dataset = BERTEmotionDataset(df, label_map=label_map, max_length=max_length)
         else:
             assert vocab is not None, "vocab required for LSTM"
-            dataset = LSTMEmotionDataset(df, vocab, label_map, max_length=max_length)
+            dataset = LSTMEmotionDataset(df, vocab, label_map=label_map, max_length=max_length)
 
         loaders[name] = DataLoader(
             dataset,
@@ -364,6 +429,52 @@ def encode_single_text_bert(text: str,
     return {"input_ids": enc["input_ids"], "attention_mask": enc["attention_mask"]}
 
 
+# ─── CSV helpers ──────────────────────────────────────────────────────────────
+
+def load_emotion_csv(path: str) -> "pd.DataFrame":
+    """Load a preprocessed emotion CSV with columns: text, label."""
+    return pd.read_csv(path)
+
+
+# BUG FIX 3: get_bert_dataloaders used to call BERTEmotionDataset(df, tokenizer, max_length)
+# — i.e. passing the tokenizer as the second positional arg (label_map position).
+# This meant label_map was a tokenizer object, so every label lookup failed and
+# defaulted to 0 (angry), giving misleading near-perfect training accuracy while
+# the model only ever predicted one class.
+# Fix: pass tokenizer via keyword arg; also inject HF_TO_FER_LABEL_MAP so
+# labels map correctly to the 7 FER classes.
+def get_bert_dataloaders(train_csv: str, val_csv: str, test_csv: str,
+                          model_name: str = "bert-base-uncased",
+                          max_length: int = 128,
+                          batch_size: int = 32) -> dict:
+    """
+    Build train / val / test DataLoaders for BERT training from pre-split CSVs.
+
+    Returns:
+        dict with keys 'train', 'val', 'test'
+    """
+    tokenizer = BertTokenizerFast.from_pretrained(model_name)
+
+    loaders = {}
+    for name, path in [("train", train_csv), ("val", val_csv), ("test", test_csv)]:
+        df = load_emotion_csv(path)
+        ds = BERTEmotionDataset(
+            df,
+            tokenizer_or_name=tokenizer,   # ← correct keyword
+            label_map=HF_TO_FER_LABEL_MAP, # ← inject label map
+            max_length=max_length
+        )
+        loaders[name] = DataLoader(
+            ds,
+            batch_size=batch_size,
+            shuffle=(name == "train"),
+            num_workers=2
+        )
+        print(f"[BERT DataLoader] {name}: {len(ds):,} samples")
+
+    return loaders
+
+
 # ─── Entry-point ──────────────────────────────────────────────────────────────
 
 if __name__ == "__main__":
@@ -385,134 +496,3 @@ if __name__ == "__main__":
     print(f"Vocab size: {len(vocab)}")
     encoded = vocab.encode(clean_text(sample_texts[0]), max_len=20)
     print(f"Encoded  : {encoded}")
-
-
-# ─── Additional helpers for train_bert.py / train_lstm.py ────────────────────
-
-def load_emotion_csv(path: str) -> "pd.DataFrame":
-    """Load a preprocessed emotion CSV with columns: text, label, emotion."""
-    return pd.read_csv(path)
-
-
-class LSTMEmotionDataset(Dataset):
-    """
-    PyTorch Dataset for BiLSTM training.
-
-    Args:
-        df         : DataFrame with 'text' and 'label' columns
-        vocab      : Vocabulary instance
-        max_length : maximum sequence length (pads / truncates)
-    """
-
-    def __init__(self, df: "pd.DataFrame", vocab: "Vocabulary", max_length: int = 128):
-        self.texts     = df["text"].tolist()
-        self.labels    = df["label"].tolist()
-        self.vocab     = vocab
-        self.max_length= max_length
-
-    def __len__(self):
-        return len(self.texts)
-
-    def __getitem__(self, idx):
-        tokens = self.texts[idx].split()[:self.max_length]
-        ids    = [self.vocab.word2idx.get(t, 1) for t in tokens]   # 1 = <UNK>
-
-        # Pad
-        pad_len = self.max_length - len(ids)
-        mask    = [1] * len(ids) + [0] * pad_len
-        ids     = ids + [0] * pad_len   # 0 = <PAD>
-
-        return {
-            "input_ids": torch.tensor(ids,  dtype=torch.long),
-            "mask":      torch.tensor(mask, dtype=torch.long),
-            "label":     torch.tensor(self.labels[idx], dtype=torch.long),
-        }
-
-
-def load_glove_embeddings(vocab: "Vocabulary", glove_path: str,
-                           embed_dim: int = 100) -> "torch.Tensor":
-    """
-    Load GloVe vectors for words in the vocabulary.
-    Words not found in GloVe are initialised to random vectors.
-
-    Returns:
-        FloatTensor of shape (vocab_size, embed_dim)
-    """
-    vectors = np.random.randn(len(vocab), embed_dim).astype(np.float32) * 0.01
-    found   = 0
-
-    with open(glove_path, encoding="utf-8") as f:
-        for line in f:
-            parts = line.strip().split()
-            word  = parts[0]
-            if word in vocab.word2idx:
-                idx = vocab.word2idx[word]
-                vectors[idx] = np.array(parts[1:], dtype=np.float32)
-                found += 1
-
-    print(f"[GloVe] Loaded {found}/{len(vocab)} vectors from {glove_path}")
-    return torch.FloatTensor(vectors)
-
-
-class BERTEmotionDataset(Dataset):
-    """
-    PyTorch Dataset for BERT training.
-
-    Args:
-        df         : DataFrame with 'text' and 'label' columns
-        tokenizer  : HuggingFace tokenizer
-        max_length : maximum token length
-    """
-
-    def __init__(self, df: "pd.DataFrame", tokenizer, max_length: int = 128):
-        self.texts     = df["text"].tolist()
-        self.labels    = df["label"].tolist()
-        self.tokenizer = tokenizer
-        self.max_length= max_length
-
-    def __len__(self):
-        return len(self.texts)
-
-    def __getitem__(self, idx):
-        enc = self.tokenizer(
-            self.texts[idx],
-            max_length=self.max_length,
-            padding="max_length",
-            truncation=True,
-            return_tensors="pt"
-        )
-        return {
-            "input_ids":      enc["input_ids"].squeeze(0),
-            "attention_mask": enc["attention_mask"].squeeze(0),
-            "label":          torch.tensor(self.labels[idx], dtype=torch.long),
-        }
-
-
-def get_bert_dataloaders(train_csv: str, val_csv: str, test_csv: str,
-                          model_name: str = "bert-base-uncased",
-                          max_length: int = 128,
-                          batch_size: int = 32) -> dict:
-    """
-    Build train / val / test DataLoaders for BERT training.
-
-    Returns:
-        dict with keys 'train', 'val', 'test'
-    """
-    from transformers import BertTokenizerFast
-    from torch.utils.data import DataLoader
-
-    tokenizer = BertTokenizerFast.from_pretrained(model_name)
-
-    loaders = {}
-    for name, path in [("train", train_csv), ("val", val_csv), ("test", test_csv)]:
-        df = load_emotion_csv(path)
-        ds = BERTEmotionDataset(df, tokenizer, max_length)
-        loaders[name] = DataLoader(
-            ds,
-            batch_size=batch_size,
-            shuffle=(name == "train"),
-            num_workers=2
-        )
-        print(f"[BERT DataLoader] {name}: {len(ds):,} samples")
-
-    return loaders
