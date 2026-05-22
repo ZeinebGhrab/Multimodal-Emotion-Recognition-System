@@ -1,7 +1,6 @@
 # Multimodal Emotion Recognition System
 
-> **Deep Learning + Generative AI — Academic Project | ENET'Com Sfax**
-
+> **Deep Learning + Generative AI — Academic Project | ENET'Com Sfax**<br>
 > Detect human emotions from facial images (FER2013) and text (tweets / captions), fuse both modalities through three fusion strategies, and generate an AI-powered emotional report via the Claude API.
 
 ---
