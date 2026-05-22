@@ -97,8 +97,6 @@ multimodal_emotion_recognition/
 │   ├── train_multimodal.py          # Train multimodal fusion model
 │   └── compare_models.py            # Compare all saved checkpoints
 │
-├── notebooks/
-│   └── full_pipeline.ipynb          # End-to-end Jupyter walkthrough
 │
 └── outputs/
     ├── checkpoints/                 # Saved model weights (.pt)
@@ -382,7 +380,7 @@ txt_feats (B, 768)   →  Linear(768→512)  → ReLU → LayerNorm  ─┘
 
 ```
 CNN  →  img_head  →  P_img (B, 7)  ─┐
-                                      ├─ MLP(14→64→7) → logits
+                                    ├─ MLP(14→64→7) → logits
 BERT →  txt_head  →  P_txt (B, 7)  ─┘
 
 # Alternative weighted mode:
