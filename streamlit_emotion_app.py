@@ -460,6 +460,20 @@ def tool_generate_report(emotion: str, scores, user_text: str = "") -> dict:
 
     top3 = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:3]
 
+    # FIX: retourner le rapport structuré (était manquant → retournait None)
+    return {
+        "emotion": emotion,
+        "scores": scores,
+        "top3": [{"emotion": e, "score": round(s, 4)} for e, s in top3],
+        "user_text": user_text,
+        "report": (
+            f"Émotion dominante détectée : **{emotion}** "
+            f"(score : {scores.get(emotion, 1.0):.2%}). "
+            + (f"Top 3 : {', '.join(f'{e} ({s:.0%})' for e, s in top3)}. " if len(top3) > 1 else "")
+            + (f'Texte analysé : « {user_text[:120]}{"…" if len(user_text) > 120 else ""} ».' if user_text else "")
+        ),
+    }
+
 
 def dispatch_tool(tool_name: str, tool_input: dict) -> str:
     step = {"type": "tool", "name": tool_name, "input": tool_input, "time": datetime.now().strftime("%H:%M:%S")}
@@ -478,11 +492,15 @@ def dispatch_tool(tool_name: str, tool_input: dict) -> str:
     else:
         result = {"error": f"Outil inconnu : {tool_name}"}
 
+    # FIX: si un outil retourne None par erreur, on retourne un dict d'erreur
+    if result is None:
+        result = {"error": f"L'outil '{tool_name}' n'a retourné aucun résultat (None)."}
+
     step["result"] = result
     st.session_state.agent_steps.append(step)
 
-    # Extract scores for visualization
-    if "scores" in result and "emotion" in result:
+    # Extract scores for visualization (protégé contre None / non-dict)
+    if isinstance(result, dict) and "scores" in result and "emotion" in result:
         st.session_state.last_result = result
 
     return json.dumps(result, ensure_ascii=False)
