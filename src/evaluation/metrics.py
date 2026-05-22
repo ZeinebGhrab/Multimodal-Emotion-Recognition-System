@@ -54,6 +54,18 @@ def compute_metrics(y_true: list, y_pred: list,
         y_true, y_pred, average="macro", labels=all_labels, zero_division=0
     )
 
+    # Macro F1 restricted to classes that actually appear in the test set.
+    # When the text dataset (dair-ai/emotion) is used, 'disgust' and 'neutral'
+    # have no samples, so their F1=0 drags the full macro down artificially.
+    # This metric gives the honest picture of performance on present classes.
+    present_labels = [i for i in all_labels if support[i] > 0]
+    if present_labels and len(present_labels) < num_classes:
+        _, _, macro_f1_present, _ = precision_recall_fscore_support(
+            y_true, y_pred, average="macro", labels=present_labels, zero_division=0
+        )
+    else:
+        macro_f1_present = float(macro_f1)   # all classes present — no difference
+
     cm = confusion_matrix(y_true, y_pred, labels=all_labels).tolist()
 
     per_class = [
@@ -72,13 +84,22 @@ def compute_metrics(y_true: list, y_pred: list,
     )
     print(report)
 
+    missing = [labels[i] for i in all_labels if support[i] == 0]
+    if missing:
+        print(f"[Metrics] Zero-support classes (excluded from macro_f1_present): "
+              f"{missing}")
+        print(f"[Metrics] macro_f1_all={macro_f1*100:.2f}%  "
+              f"macro_f1_present={macro_f1_present*100:.2f}%\n")
+
     return {
-        "accuracy":         float(acc),
-        "macro_precision":  float(macro_prec),
-        "macro_recall":     float(macro_rec),
-        "macro_f1":         float(macro_f1),
-        "per_class":        per_class,
-        "confusion_matrix": cm,
+        "accuracy":             float(acc),
+        "macro_precision":      float(macro_prec),
+        "macro_recall":         float(macro_rec),
+        "macro_f1":             float(macro_f1),          # all 7 classes
+        "macro_f1_present":     float(macro_f1_present),  # present classes only
+        "zero_support_classes": missing,
+        "per_class":            per_class,
+        "confusion_matrix":     cm,
         "classification_report": report
     }
 

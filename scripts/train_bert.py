@@ -247,8 +247,13 @@ def main():
     emotion_names = cfg["emotions"]["classes"]
     metrics = compute_metrics(labels, preds, emotion_names)
 
-    print(f"\n[BERT Eval] Test Accuracy : {metrics['accuracy']*100:.2f}%")
-    print(f"[BERT Eval] Macro F1      : {metrics['macro_f1']*100:.2f}%")
+    present = metrics.get("macro_f1_present", metrics["macro_f1"])
+    missing = metrics.get("zero_support_classes", [])
+    print(f"\n[BERT Eval] Test Accuracy        : {metrics['accuracy']*100:.2f}%")
+    print(f"[BERT Eval] Macro F1 (all 7)     : {metrics['macro_f1']*100:.2f}%"
+          + (f"  <- includes {missing} (support=0)" if missing else ""))
+    print(f"[BERT Eval] Macro F1 (present)   : {present*100:.2f}%"
+          + (f"  <- {7 - len(missing)}/7 classes" if missing else ""))
 
     with open(out_dir / "test_metrics.json", "w") as f:
         json.dump({k: v for k, v in metrics.items()
