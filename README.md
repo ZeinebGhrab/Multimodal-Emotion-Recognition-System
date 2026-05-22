@@ -341,7 +341,7 @@ All three strategies are implemented in `src/fusion/fusion_models.py`.
 
 ```
 img_feats (B, 2048)  →  Linear(2048→512) → ReLU → LayerNorm  ─┐
-                                                                 ├── cat → (B, 1024)
+                                                              ├── cat → (B, 1024)
 txt_feats (B, 768)   →  Linear(768→512)  → ReLU → LayerNorm  ─┘
   → MLP(1024→512→256→7) → logits
 ```
