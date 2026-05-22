@@ -1,0 +1,15 @@
+# datasets
+data/raw/
+data/processed/
+
+# embeddings
+*.txt
+
+# models
+outputs/
+*.pt
+*.bin
+
+# cache
+__pycache__/
+*.pyc

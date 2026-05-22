@@ -82,10 +82,7 @@ def main():
     fig_dir.mkdir(parents=True, exist_ok=True)
 
     # ── Data ─────────────────────────────────────────────────────────────────
-    csv_path = os.path.join(cfg["paths"]["data_raw"], "fer2013.csv")
-    if not os.path.exists(csv_path):
-        print(f"[WARN] FER2013 not found at {csv_path}")
-        print("       Download from: https://www.kaggle.com/datasets/msambare/fer2013")
+    data_raw = cfg["paths"]["data_raw"]
         print("       Using dummy data for smoke-test …\n")
         from torch.utils.data import TensorDataset, DataLoader
         dummy_imgs   = torch.randn(200, 3, 224, 224)
@@ -98,7 +95,7 @@ def main():
         }
     else:
         loaders = get_dataloaders(
-            csv_path=csv_path,
+            data_raw=data_raw,
             img_size=cfg["image"]["resize"],
             batch_size=batch_size,
             num_workers=4

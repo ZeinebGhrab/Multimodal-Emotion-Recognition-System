@@ -254,16 +254,24 @@ def main():
     errors = []
 
     # 1. FER2013
-    fer_csv = os.path.join(data_raw, "fer2013.csv")
-    if os.path.exists(fer_csv):
-        try:
-            validate_fer2013(fer_csv)
-        except Exception as e:
-            errors.append(f"FER2013 validation error: {e}")
-    else:
-        print(f"\n[SKIP] FER2013 not found at {fer_csv}")
-        print("       Download from: https://www.kaggle.com/datasets/msambare/fer2013")
-        print("       Place fer2013.csv in:", data_raw)
+    from src.preprocessing.image_preprocessing import _detect_fer2013
+    try:
+        fmt, path = _detect_fer2013(data_raw)
+        print(f"\n[FER2013] Format détecté : {fmt}  →  {path}")
+        if fmt == "csv":
+            validate_fer2013(path)
+        else:
+            print(f"  ✓ Dossier trouvé — structure images/dossiers acceptée.")
+            for split in ("train", "test"):
+                split_path = os.path.join(path, split)
+                classes = [d for d in os.listdir(split_path)
+                           if os.path.isdir(os.path.join(split_path, d))]
+                total = sum(
+                    len(os.listdir(os.path.join(split_path, c))) for c in classes
+                )
+                print(f"  [{split}]  {total:,} images  —  classes : {sorted(classes)}")
+    except FileNotFoundError as e:
+        print(f"\n[SKIP] FER2013 : {e}")
 
     # 2. Emotion NLP
     nlp_candidates = [
