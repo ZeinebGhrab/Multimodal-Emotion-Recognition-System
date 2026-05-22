@@ -44,6 +44,8 @@ cnn:
   pretrained: true
   dropout: 0.5
   learning_rate: 0.0001
+  weight_decay: 0.0001        # L2 regularisation for backbone + head
+  backbone_lr_factor: 0.1     # LR multiplier for pretrained layers
   batch_size: 64
   epochs: 30
   scheduler: "cosine"
@@ -53,6 +55,7 @@ vit:
   pretrained: true
   dropout: 0.1
   learning_rate: 0.00002
+  weight_decay: 0.01          # Standard ViT / transformer weight decay
   batch_size: 32
   epochs: 20
 
@@ -62,6 +65,7 @@ lstm:
   bidirectional: true
   dropout: 0.4
   learning_rate: 0.001
+  weight_decay: 0.0001        # Mild L2 for LSTM weights
   batch_size: 128
   epochs: 30
 
@@ -69,6 +73,10 @@ bert:
   model_name: "bert-base-uncased"
   dropout: 0.3
   learning_rate: 0.00002
+  weight_decay: 0.01          # AdamW default for BERT fine-tuning
+  no_decay_params:            # Params exempt from weight decay
+    - "bias"
+    - "LayerNorm.weight"
   batch_size: 32
   epochs: 10
   warmup_steps: 500
@@ -80,6 +88,8 @@ fusion:
   hidden_dim: 512
   dropout: 0.3
   learning_rate: 0.0001
+  weight_decay_encoders: 0.0001   # L2 for pretrained encoders (lighter)
+  weight_decay_fusion: 0.001      # L2 for fusion head (stronger)
   batch_size: 32
   epochs: 20
   type: "attention"   # early | late | attention
@@ -87,6 +97,14 @@ fusion:
   attention:
     num_heads: 8
     d_model: 512
+
+# ── Training Utilities ──────────────────────────────────────
+training:
+  early_stopping:
+    patience: 7           # Epochs without improvement before stopping
+    min_delta: 0.001      # Minimum change to count as improvement
+    monitor: "val_loss"   # 'val_loss' (mode=min) | 'val_acc' (mode=max)
+    restore_best: true    # Reload best weights when training stops
 
 # ── GenAI Module ────────────────────────────────────────────
 genai:

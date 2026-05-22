@@ -83,19 +83,31 @@ class EmotionCNN(nn.Module):
 
 # ─── Training utilities ───────────────────────────────────────────────────────
 
-def build_optimizer(model: EmotionCNN, lr: float = 1e-4,
-                    backbone_lr_factor: float = 0.1):
+def build_optimizer(model: EmotionCNN,
+                    lr: float = 1e-4,
+                    backbone_lr_factor: float = 0.1,
+                    weight_decay: float = 1e-4):
     """
-    Two-group optimizer: backbone at lr*0.1, head at lr.
-    Standard practice for fine-tuning pretrained models.
+    Two-group optimizer: backbone at lr*backbone_lr_factor, head at lr.
+
+    Weight decay (L2) is applied to both groups so that large weights are
+    penalised during fine-tuning, reducing overfitting on FER2013.
+
+    Args:
+        weight_decay : L2 penalty coefficient — read from config.yaml (cnn.weight_decay)
+                       Typical range: 1e-5 (very mild) … 1e-3 (strong regularisation)
     """
     backbone_params = list(model.features.parameters())
     head_params     = list(model.classifier.parameters())
 
     return torch.optim.AdamW([
-        {"params": backbone_params, "lr": lr * backbone_lr_factor},
-        {"params": head_params,     "lr": lr},
-    ], weight_decay=1e-4)
+        {"params": backbone_params,
+         "lr": lr * backbone_lr_factor,
+         "weight_decay": weight_decay},
+        {"params": head_params,
+         "lr": lr,
+         "weight_decay": weight_decay},
+    ])
 
 
 def build_scheduler(optimizer, epochs: int, warmup_epochs: int = 5):
@@ -183,7 +195,11 @@ if __name__ == "__main__":
     feats = model.extract_features(dummy)
     print(f"Features: {feats.shape}")  # (4, 2048)
 
-    # Param count
+    # Optimizer — now reads weight_decay explicitly
+    opt = build_optimizer(model, lr=1e-4, weight_decay=1e-4)
+    for g in opt.param_groups:
+        print(f"  param group: lr={g['lr']}  weight_decay={g['weight_decay']}")
+
     total = sum(p.numel() for p in model.parameters())
     trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
     print(f"Total params    : {total:,}")

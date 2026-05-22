@@ -30,20 +30,25 @@ from src.preprocessing.text_preprocessing import (
 from src.evaluation.metrics import (
     compute_metrics, plot_confusion_matrix, plot_training_curves
 )
+from src.utils.early_stopping import EarlyStopping
 from torch.utils.data import DataLoader
 
 
 def parse_args():
     p = argparse.ArgumentParser(description="Train BiLSTM emotion classifier")
-    p.add_argument("--config",     default="configs/config.yaml")
-    p.add_argument("--epochs",     type=int,   default=None)
-    p.add_argument("--lr",         type=float, default=None)
-    p.add_argument("--batch_size", type=int,   default=None)
-    p.add_argument("--no_glove",   action="store_true",
+    p.add_argument("--config",       default="configs/config.yaml")
+    p.add_argument("--epochs",       type=int,   default=None)
+    p.add_argument("--lr",           type=float, default=None)
+    p.add_argument("--batch_size",   type=int,   default=None)
+    p.add_argument("--weight_decay", type=float, default=None,
+                   help="L2 weight decay (overrides config)")
+    p.add_argument("--patience",     type=int,   default=None,
+                   help="Early stopping patience (overrides config)")
+    p.add_argument("--no_glove",     action="store_true",
                    help="Use random embeddings (skip GloVe loading)")
-    p.add_argument("--freeze_emb", action="store_true",
+    p.add_argument("--freeze_emb",   action="store_true",
                    help="Freeze embedding layer during training")
-    p.add_argument("--device",     default="auto",
+    p.add_argument("--device",       default="auto",
                    choices=["auto", "cuda", "cpu", "mps"])
     return p.parse_args()
 
@@ -103,20 +108,28 @@ def main():
     with open(args.config) as f:
         cfg = yaml.safe_load(f)
 
-    lstm_cfg   = cfg["lstm"]
-    epochs     = args.epochs    or lstm_cfg["epochs"]
-    lr         = args.lr        or lstm_cfg["learning_rate"]
-    batch_size = args.batch_size or lstm_cfg["batch_size"]
-    max_length = cfg["text"]["max_length"]
-    embed_dim  = cfg["text"]["embedding_dim"]
-    glove_path = cfg["text"]["glove_path"]
+    lstm_cfg = cfg["lstm"]
+    es_cfg   = cfg["training"]["early_stopping"]
+
+    epochs       = args.epochs       or lstm_cfg["epochs"]
+    lr           = args.lr           or lstm_cfg["learning_rate"]
+    batch_size   = args.batch_size   or lstm_cfg["batch_size"]
+    max_length   = cfg["text"]["max_length"]
+    embed_dim    = cfg["text"]["embedding_dim"]
+    glove_path   = cfg["text"]["glove_path"]
+    weight_decay = args.weight_decay if args.weight_decay is not None \
+                   else lstm_cfg["weight_decay"]
+    patience     = args.patience     if args.patience is not None \
+                   else es_cfg["patience"]
 
     if args.device == "auto":
         device = ("cuda" if torch.cuda.is_available() else
                   "mps"  if torch.backends.mps.is_available() else "cpu")
     else:
         device = args.device
-    print(f"[LSTM Train] Device: {device}\n")
+    print(f"[LSTM Train] Device       : {device}")
+    print(f"[LSTM Train] weight_decay : {weight_decay}")
+    print(f"[LSTM Train] ES patience  : {patience}\n")
 
     torch.manual_seed(cfg["project"]["seed"])
 
@@ -126,11 +139,13 @@ def main():
     out_dir.mkdir(parents=True, exist_ok=True)
     fig_dir.mkdir(parents=True, exist_ok=True)
 
+    ckpt_path = str(out_dir / "best_lstm.pt")
+
     # ── Data ─────────────────────────────────────────────────────────────────
     train_csv = os.path.join(cfg["paths"]["data_raw"], "emotion_train.csv")
 
     if not os.path.exists(train_csv):
-        print(f"[WARN] Dataset not found at {train_csv}. Using dummy data.\n")
+        print(f"[WARN] Dataset not found at {train_csv} — using dummy data.\n")
         vocab_size = cfg["text"]["vocab_size"]
         vocab = None
         pretrained_emb = None
@@ -147,19 +162,17 @@ def main():
 
         loaders = {"train": DummyLoader(), "val": DummyLoader(), "test": DummyLoader()}
     else:
-        # Build vocabulary from training data
         train_df = load_emotion_csv(train_csv)
         vocab = Vocabulary(min_freq=2)
         vocab.build(train_df["text"].tolist())
         print(f"[LSTM Train] Vocabulary size: {len(vocab):,}")
 
-        # Load GloVe if available
         pretrained_emb = None
         if not args.no_glove and os.path.exists(glove_path):
             print(f"[LSTM Train] Loading GloVe from {glove_path} …")
             pretrained_emb = load_glove_embeddings(vocab, glove_path, embed_dim)
         elif not args.no_glove:
-            print(f"[WARN] GloVe not found at {glove_path}. Using random embeddings.")
+            print(f"[WARN] GloVe not found at {glove_path} — using random embeddings.")
 
         val_csv  = os.path.join(cfg["paths"]["data_raw"], "emotion_val.csv")
         test_csv = os.path.join(cfg["paths"]["data_raw"], "emotion_test.csv")
@@ -194,16 +207,29 @@ def main():
 
     # ── Loss + optimizer ──────────────────────────────────────────────────────
     criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
-    optimizer = torch.optim.AdamW(model.parameters(), lr=lr, weight_decay=1e-4)
+    optimizer = torch.optim.AdamW(
+        model.parameters(), lr=lr,
+        weight_decay=weight_decay           # ← from config, no longer hardcoded
+    )
     scheduler = torch.optim.lr_scheduler.CosineAnnealingLR(
         optimizer, T_max=epochs, eta_min=1e-6
     )
 
-    # ── Training loop ─────────────────────────────────────────────────────────
-    best_val_acc = 0.0
-    train_losses, val_losses, train_accs, val_accs = [], [], [], []
+    # ── Early stopping ────────────────────────────────────────────────────────
+    monitor = es_cfg.get("monitor", "val_loss")
+    es_mode = "min" if monitor == "val_loss" else "max"
+    early_stopper = EarlyStopping(
+        patience=patience,
+        min_delta=es_cfg["min_delta"],
+        mode=es_mode,
+        restore_best=es_cfg.get("restore_best", True),
+        verbose=True
+    )
 
-    print(f"[LSTM Train] Starting training for {epochs} epochs …\n")
+    # ── Training loop ─────────────────────────────────────────────────────────
+    train_losses, val_losses, train_accs, val_accs = [], [], [], []
+    print(f"[LSTM Train] Starting training for up to {epochs} epochs …")
+    print(f"[LSTM Train] Early stopping on '{monitor}' (mode={es_mode})\n")
 
     for epoch in range(1, epochs + 1):
         tr_loss, tr_acc = train_epoch(
@@ -219,18 +245,18 @@ def main():
               f"Train loss: {tr_loss:.4f}  acc: {tr_acc:.4f} | "
               f"Val   loss: {vl_loss:.4f}  acc: {vl_acc:.4f}")
 
-        if vl_acc > best_val_acc:
-            best_val_acc = vl_acc
-            torch.save({
-                "model_state": model.state_dict(),
-                "vocab": vocab
-            }, out_dir / "best_lstm.pt")
-            print(f"  ✓ Best model saved (val_acc={best_val_acc:.4f})")
+        es_metric = vl_loss if monitor == "val_loss" else vl_acc
+        if early_stopper(es_metric, model, ckpt_path):
+            print(f"\n[LSTM Train] Early stopping triggered at epoch {epoch}.")
+            break
 
     # ── Final evaluation ──────────────────────────────────────────────────────
     print("\n[LSTM Eval] Loading best checkpoint …")
-    ckpt = torch.load(out_dir / "best_lstm.pt", map_location=device)
-    model.load_state_dict(ckpt["model_state"])
+    if os.path.exists(ckpt_path):
+        ckpt = torch.load(ckpt_path, map_location=device)
+        # Handle both raw state_dict and wrapped dict (legacy)
+        state = ckpt.get("model_state", ckpt) if isinstance(ckpt, dict) else ckpt
+        model.load_state_dict(state)
 
     _, test_acc, preds, labels = evaluate_epoch(
         model, loaders["test"], criterion, device)
@@ -257,7 +283,7 @@ def main():
     )
 
     print(f"\n[Done] Artifacts saved to: {out_dir}/")
-    return str(out_dir / "best_lstm.pt")
+    return ckpt_path
 
 
 if __name__ == "__main__":

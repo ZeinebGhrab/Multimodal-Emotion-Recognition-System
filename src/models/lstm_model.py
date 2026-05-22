@@ -177,25 +177,46 @@ class BERTClassifier(nn.Module):
 
 # ─── Optimizer / scheduler helpers ────────────────────────────────────────────
 
-def build_bert_optimizer(model: BERTClassifier, lr: float = 2e-5,
-                         bert_lr_factor: float = 1.0):
+def build_bert_optimizer(model: BERTClassifier,
+                          lr: float = 2e-5,
+                          weight_decay: float = 1e-2,
+                          no_decay_params: list[str] | None = None):
     """
-    AdamW with weight decay.  No decay applied to bias / LayerNorm params
-    (standard BERT fine-tuning practice).
+    AdamW with configurable weight decay (L2 regularisation).
+
+    The standard BERT fine-tuning recipe exempts bias terms and LayerNorm
+    weights from weight decay — applying L2 to these provides no benefit
+    and can destabilise training.
+
+    Args:
+        weight_decay     : L2 penalty for regular parameters (from bert.weight_decay
+                           in config.yaml). Typical value: 0.01
+        no_decay_params  : param name substrings that should NOT receive weight
+                           decay (from bert.no_decay_params in config.yaml).
+                           Defaults to ["bias", "LayerNorm.weight"]
     """
-    no_decay = ["bias", "LayerNorm.weight"]
-    bert_params = [
-        {"params": [p for n, p in model.bert.named_parameters()
-                    if not any(nd in n for nd in no_decay)],
-         "weight_decay": 1e-2, "lr": lr * bert_lr_factor},
-        {"params": [p for n, p in model.bert.named_parameters()
-                    if any(nd in n for nd in no_decay)],
-         "weight_decay": 0.0, "lr": lr * bert_lr_factor},
+    if no_decay_params is None:
+        no_decay_params = ["bias", "LayerNorm.weight"]
+
+    bert_decay, bert_no_decay = [], []
+    for name, param in model.bert.named_parameters():
+        if any(nd in name for nd in no_decay_params):
+            bert_no_decay.append(param)
+        else:
+            bert_decay.append(param)
+
+    optimizer_groups = [
+        # BERT params WITH weight decay
+        {"params": bert_decay,
+         "lr": lr, "weight_decay": weight_decay},
+        # BERT params WITHOUT weight decay (bias / LayerNorm)
+        {"params": bert_no_decay,
+         "lr": lr, "weight_decay": 0.0},
+        # Classifier head — always apply weight decay
+        {"params": model.classifier.parameters(),
+         "lr": lr, "weight_decay": weight_decay},
     ]
-    head_params = [
-        {"params": model.classifier.parameters(), "weight_decay": 1e-4, "lr": lr}
-    ]
-    return torch.optim.AdamW(bert_params + head_params)
+    return torch.optim.AdamW(optimizer_groups)
 
 
 def build_bert_scheduler(optimizer, num_training_steps: int,
@@ -293,6 +314,13 @@ if __name__ == "__main__":
     bert_model.dropout = nn.Dropout(0.3)
     bert_model.classifier = nn.Sequential(nn.Linear(128, 7))
     bert_model = bert_model.to(device)
+
+    # Optimizer — now reads weight_decay explicitly
+    opt = build_bert_optimizer(bert_model, lr=2e-5, weight_decay=0.01)
+    for i, g in enumerate(opt.param_groups):
+        print(f"  group {i}: lr={g['lr']}  weight_decay={g['weight_decay']}  "
+              f"params={len(g['params'])}")
+
     inp = torch.randint(0, 1000, (B, T)).to(device)
     mask = torch.ones(B, T, dtype=torch.long).to(device)
     out = bert_model(inp, mask)
