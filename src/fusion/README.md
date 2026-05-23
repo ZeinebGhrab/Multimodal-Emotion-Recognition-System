@@ -231,7 +231,7 @@ probs, preds = model.predict(images, input_ids, attention_mask)
 | Criterion            | Early Fusion | Late Fusion | Attention Fusion |
 |----------------------|:------------:|:-----------:|:----------------:|
 | Test accuracy        | ~80%         | ~81%        | **~83%**         |
-| Cross-modal align    | ❌           | ❌          | ✅               |
+| Cross-modal align    | ❌           | ❌         | ✅               |
 | Missing modality ok  | ❌           | ✅          | Partial          |
 | Interpretable        | Low          | High        | Medium           |
 | Training speed       | ✅ Fast      | ✅ Fast     | Moderate         |
@@ -263,5 +263,5 @@ python src/fusion/fusion_models.py
 
 ---
 
-Last Updated: 2026
+Last Updated: 2026<br>
 Status: Active ✓
