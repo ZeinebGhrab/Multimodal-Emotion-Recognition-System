@@ -1,5 +1,16 @@
 # Multimodal Emotion Recognition System
 
+[![Version](https://img.shields.io/badge/version-1.0.0-blue.svg)]()
+[![Python](https://img.shields.io/badge/Python-3.10%2B-3776AB?logo=python&logoColor=white)]()
+[![FastAPI](https://img.shields.io/badge/FastAPI-Backend-009688?logo=fastapi&logoColor=white)]()
+[![PyTorch](https://img.shields.io/badge/PyTorch-DeepLearning-EE4C2C?logo=pytorch&logoColor=white)]()
+[![Ollama](https://img.shields.io/badge/LLM-Ollama%20%2F%20Llama%203.2-purple)]()
+[![Streamlit](https://img.shields.io/badge/UI-Streamlit-FF4B4B?logo=streamlit&logoColor=white)]()
+[![License](https://img.shields.io/badge/license-Academic-lightgrey.svg)]()
+
+[![Stars](https://img.shields.io/github/stars/ZeinebGhrab/multimodal-emotion-recognition?style=social)]()
+[![Forks](https://img.shields.io/github/forks/ZeinebGhrab/multimodal-emotion-recognition?style=social)]()
+
 > **Deep Learning · Generative AI · ReAct Agent**  
 > Academic Project — ENET'Com Sfax
 
