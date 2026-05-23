@@ -2,80 +2,289 @@
 streamlit_emotion_app.py
 ─────────────────────────
 Streamlit interface for the multimodal emotion recognition AI agent.
-Design: clean professional theme — imports emotion_styles.py for CSS and charts.
 
 Features:
-  1. Text, image, or multimodal analysis
-  2. Radar and bar chart visualization of scores
-  3. Ollama agent ReAct trace
-  4. System prompt and tools editor
-  5. Session history
+  1. Text, image, or combined (multimodal) analysis
+  2. Visualization of the agent’s reasoning (ReAct loop)
+  3. Agent improvement panel (system prompt, model, parameters)
+  4. Session history
+  5. Radar visualization of emotion scores
 
-Usage:
+Usage :
     streamlit run streamlit_emotion_app.py
-    # Prerequisites: uvicorn api.app:app --port 8000 + ollama serve
-
+    # Avec serveur FastAPI démarré :
+    # uvicorn api.app:app --port 8000
 """
 
-import json, time, tempfile, requests
+import json
+import time
+import tempfile
+import requests
 import ollama as ollama_lib
 from pathlib import Path
 from datetime import datetime
+from io import BytesIO
 
 import streamlit as st
+import plotly.graph_objects as go
+import plotly.express as px
 
-# ── Page config (must be FIRST Streamlit call) ────────────────────────────────
+# ─── Page config (doit être le premier appel Streamlit) ───────────────────────
+
 st.set_page_config(
     page_title="EmotionSense AI",
-    page_icon="🎭",
+    page_icon="🧠",
     layout="wide",
     initial_sidebar_state="expanded",
 )
 
-# ── Design system (CSS + chart helpers) ──────────────────────────────────────
-from emotion_styles import (
-    inject_css,
-    EMOTION_META,
-    render_radar_chart,
-    render_bar_chart,
-)
-inject_css()
+# ─── Custom CSS ───────────────────────────────────────────────────────────────
+
+st.markdown("""
+<style>
+/* Import Fonts */
+@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap');
+
+/* Global */
+html, body, [class*="css"] {
+    font-family: 'DM Sans', sans-serif;
+}
+
+/* Hide default header/footer */
+#MainMenu {visibility: hidden;}
+footer {visibility: hidden;}
+header {visibility: hidden;}
+
+/* App background */
+.stApp {
+    background: #0a0a0f;
+    color: #e8e8f0;
+}
+
+/* Sidebar */
+section[data-testid="stSidebar"] {
+    background: #111118;
+    border-right: 1px solid #1e1e2e;
+}
+
+/* Title Banner */
+.hero-title {
+    font-family: 'Syne', sans-serif;
+    font-size: 2.6rem;
+    font-weight: 800;
+    background: linear-gradient(135deg, #7c6af7 0%, #a855f7 40%, #ec4899 100%);
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    background-clip: text;
+    letter-spacing: -0.03em;
+    line-height: 1.1;
+    margin-bottom: 0.2rem;
+}
+
+.hero-sub {
+    font-family: 'DM Sans', sans-serif;
+    font-size: 0.95rem;
+    color: #6b6b8a;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    margin-bottom: 2rem;
+}
+
+/* Cards */
+.card {
+    background: #13131f;
+    border: 1px solid #1e1e30;
+    border-radius: 16px;
+    padding: 1.5rem;
+    margin-bottom: 1rem;
+}
+
+.card-accent {
+    border-left: 3px solid #7c6af7;
+}
+
+/* Emotion badge */
+.emotion-badge {
+    display: inline-block;
+    padding: 0.35rem 1rem;
+    border-radius: 100px;
+    font-family: 'Syne', sans-serif;
+    font-weight: 700;
+    font-size: 1.1rem;
+    letter-spacing: 0.02em;
+}
+
+/* Agent step */
+.agent-step {
+    background: #0f0f1a;
+    border: 1px solid #1e1e30;
+    border-radius: 12px;
+    padding: 0.9rem 1.2rem;
+    margin: 0.4rem 0;
+    font-size: 0.88rem;
+    font-family: 'DM Mono', monospace;
+}
+
+.step-thinking { border-left: 3px solid #7c6af7; }
+.step-tool     { border-left: 3px solid #f59e0b; }
+.step-result   { border-left: 3px solid #10b981; }
+.step-final    { border-left: 3px solid #ec4899; }
+
+/* Metric cards */
+.metric-card {
+    background: #13131f;
+    border: 1px solid #1e1e30;
+    border-radius: 12px;
+    padding: 1rem;
+    text-align: center;
+}
+
+.metric-value {
+    font-family: 'Syne', sans-serif;
+    font-size: 2rem;
+    font-weight: 700;
+    color: #7c6af7;
+}
+
+.metric-label {
+    font-size: 0.78rem;
+    color: #6b6b8a;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+/* Buttons */
+.stButton > button {
+    background: linear-gradient(135deg, #7c6af7, #a855f7);
+    color: white;
+    border: none;
+    border-radius: 10px;
+    font-family: 'Syne', sans-serif;
+    font-weight: 600;
+    letter-spacing: 0.02em;
+    padding: 0.65rem 1.5rem;
+    width: 100%;
+    transition: opacity 0.2s;
+}
+
+.stButton > button:hover {
+    opacity: 0.85;
+}
+
+/* Input styling */
+.stTextArea textarea, .stTextInput input {
+    background: #0f0f1a !important;
+    border: 1px solid #1e1e30 !important;
+    border-radius: 10px !important;
+    color: #e8e8f0 !important;
+    font-family: 'DM Sans', sans-serif !important;
+}
+
+/* Tabs */
+.stTabs [data-baseweb="tab-list"] {
+    background: #111118;
+    border-radius: 10px;
+    padding: 4px;
+    gap: 4px;
+}
+
+.stTabs [data-baseweb="tab"] {
+    background: transparent;
+    color: #6b6b8a;
+    border-radius: 8px;
+    font-family: 'DM Sans', sans-serif;
+    font-weight: 500;
+    padding: 0.5rem 1.2rem;
+}
+
+.stTabs [aria-selected="true"] {
+    background: #1e1e30 !important;
+    color: #e8e8f0 !important;
+}
+
+/* Divider */
+.emotion-divider {
+    border: none;
+    border-top: 1px solid #1e1e30;
+    margin: 1.5rem 0;
+}
+
+/* History item */
+.history-item {
+    background: #111118;
+    border: 1px solid #1e1e30;
+    border-radius: 10px;
+    padding: 0.8rem 1rem;
+    margin-bottom: 0.5rem;
+    cursor: pointer;
+    transition: border-color 0.2s;
+}
+.history-item:hover { border-color: #7c6af7; }
+
+/* Scrollable container */
+.scroll-box {
+    max-height: 420px;
+    overflow-y: auto;
+    padding-right: 6px;
+}
+
+/* Selectbox */
+.stSelectbox > div > div {
+    background: #0f0f1a !important;
+    border: 1px solid #1e1e30 !important;
+    color: #e8e8f0 !important;
+}
+
+/* Slider */
+.stSlider > div { color: #e8e8f0; }
+
+/* Info / warning boxes */
+.stAlert {
+    background: #13131f !important;
+    border: 1px solid #1e1e30 !important;
+    border-radius: 10px !important;
+}
+</style>
+""", unsafe_allow_html=True)
+
 
 # ─── Constants ────────────────────────────────────────────────────────────────
 
 EMOTION_CLASSES = ["angry", "disgust", "fear", "happy", "neutral", "sad", "surprise"]
 
-DEFAULT_SYSTEM_PROMPT = """\
-Tu es un agent expert en reconnaissance des émotions multimodale.
+EMOTION_META = {
+    "angry":    {"emoji": "😠", "color": "#ef4444", "label": "Colère"},
+    "disgust":  {"emoji": "🤢", "color": "#84cc16", "label": "Dégoût"},
+    "fear":     {"emoji": "😨", "color": "#f97316", "label": "Peur"},
+    "happy":    {"emoji": "😊", "color": "#22c55e", "label": "Joie"},
+    "neutral":  {"emoji": "😐", "color": "#94a3b8", "label": "Neutre"},
+    "sad":      {"emoji": "😢", "color": "#3b82f6", "label": "Tristesse"},
+    "surprise": {"emoji": "😲", "color": "#a855f7", "label": "Surprise"},
+}
 
-⚠️ RÈGLE CRITIQUE — NE JAMAIS traduire le texte utilisateur :
-  Le paramètre 'text' passé à analyze_text ou analyze_multimodal doit être
-  le texte EXACT de l'utilisateur, mot pour mot, sans aucune modification.
-  BERT est entraîné sur l'anglais — toute traduction détruit la prédiction.
-  ✅ Correct  : text="I feel so glad"
-  ❌ Interdit : text="Je me sens tellement heureux"
+DEFAULT_SYSTEM_PROMPT = """Tu es un agent expert en reconnaissance des émotions multimodale.
+Tu as accès à 4 outils :
+  1. analyze_image  — analyse une image faciale (ResNet-50)
+  2. analyze_text   — analyse un texte (BERT)
+  3. analyze_multimodal — combine image + texte pour plus de précision (Attention Fusion, 83% accuracy)
+  4. generate_report — génère un rapport psychologique structuré après détection
 
-Outils disponibles :
-  1. analyze_image      — image faciale (ResNet-50)
-  2. analyze_text       — texte EXACT tel que saisi (BERT anglais)
-  3. analyze_multimodal — image + texte exact (Attention Fusion ~97.7%)
-  4. generate_report    — rapport psychologique (appelle TOUJOURS après analyse)
+Règles de raisonnement :
+- Si l'utilisateur fournit image ET texte → utilise analyze_multimodal (plus précis)
+- Si l'utilisateur fournit uniquement une image → utilise analyze_image
+- Si l'utilisateur fournit uniquement du texte → utilise analyze_text
+- Après toute analyse → appelle toujours generate_report avec les scores obtenus
+- Si un outil retourne une erreur → explique le problème clairement
+- Réponds toujours en français sauf si l'utilisateur écrit en anglais
 
-Routing :
-  Image ET texte → analyze_multimodal
-  Image seule    → analyze_image
-  Texte seul     → analyze_text
+Ta réponse finale doit inclure :
+  • L'émotion détectée et le score de confiance
+  • Le top-3 des émotions avec leurs probabilités
+  • Les insights psychologiques du rapport
+  • Les recommandations concrètes
+  • Quelle modalité / quel modèle a été utilisé et pourquoi"""
 
-Émotions valides : angry, disgust, fear, happy, neutral, sad, surprise
-NE PAS inventer d'autres labels.
-
-⚠️ RÈGLE generate_report :
-  Utilise EXACTEMENT l'émotion et les scores retournés par l'outil d'analyse.
-  Ne recalcule PAS les scores. Copie-les tels quels depuis la réponse de l'outil.
-
-Réponse finale en français.\
-"""
-
+# Tools in Ollama/OpenAI format (type: function)
 TOOLS = [
     {
         "type": "function",
@@ -83,63 +292,69 @@ TOOLS = [
             "name": "analyze_image",
             "description": (
                 "Analyse une image faciale pour détecter l'émotion. "
-                "Utilise ResNet-50 fine-tuné sur FER2013. "
+                "Utilise le modèle ResNet-50 fine-tuné sur FER2013. "
                 "Appelle cet outil quand l'utilisateur fournit une image."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "image_path": {"type": "string", "description": "Chemin local vers l'image (JPEG/PNG)"}
+                    "image_path": {
+                        "type": "string",
+                        "description": "Chemin local vers l'image (JPEG ou PNG)"
+                    }
                 },
-                "required": ["image_path"],
-            },
-        },
+                "required": ["image_path"]
+            }
+        }
     },
     {
         "type": "function",
         "function": {
             "name": "analyze_text",
             "description": (
-                "Analyse un texte court pour détecter l'émotion. "
+                "Analyse un texte court pour détecter l'émotion exprimée. "
                 "Utilise BERT fine-tuné sur dair-ai/emotion. "
                 "Appelle cet outil quand l'utilisateur fournit du texte sans image."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "text": {"type": "string", "description": "Texte à analyser"}
+                    "text": {
+                        "type": "string",
+                        "description": "Texte à analyser"
+                    }
                 },
-                "required": ["text"],
-            },
-        },
+                "required": ["text"]
+            }
+        }
     },
     {
         "type": "function",
         "function": {
             "name": "analyze_multimodal",
             "description": (
-                "Analyse combinée image + texte. Utilise Attention Fusion (ResNet-50 + BERT). "
-                "Appelle cet outil quand l'utilisateur fournit UNE IMAGE ET UN TEXTE. "
-                "C'est l'outil le plus précis (~97.7% accuracy)."
+                "Analyse combinée image + texte pour une détection plus précise. "
+                "Utilise le modèle Attention Fusion (ResNet-50 + BERT + Cross-Attention). "
+                "Appelle cet outil quand l'utilisateur fournit BOTH une image ET un texte. "
+                "C'est l'outil le plus précis (~83% accuracy)."
             ),
             "parameters": {
                 "type": "object",
                 "properties": {
                     "image_path": {"type": "string", "description": "Chemin local vers l'image"},
-                    "text": {"type": "string", "description": "Texte accompagnant l'image"},
+                    "text": {"type": "string", "description": "Texte accompagnant l'image"}
                 },
-                "required": ["image_path", "text"],
-            },
-        },
+                "required": ["image_path", "text"]
+            }
+        }
     },
     {
         "type": "function",
         "function": {
             "name": "generate_report",
             "description": (
-                "Génère un rapport psychologique structuré. "
-                "Appelle cet outil APRÈS avoir obtenu un résultat de détection. "
-                "Passe l'émotion et les scores EXACTEMENT tels que retournés par l'outil d'analyse."
+                "Génère un rapport psychologique structuré à partir du résultat de détection. "
+                "Appelle cet outil APRÈS avoir obtenu un résultat de détection."
             ),
             "parameters": {
                 "type": "object",
@@ -147,38 +362,42 @@ TOOLS = [
                     "emotion": {
                         "type": "string",
                         "enum": EMOTION_CLASSES,
-                        "description": "Émotion principale détectée",
+                        "description": "Émotion principale détectée"
                     },
                     "scores": {
                         "type": "object",
-                        "description": "Dict {emotion: probability} pour les 7 classes — copié depuis l'outil d'analyse",
+                        "description": "Dict {emotion: probability} pour les 7 classes"
                     },
                     "user_text": {
                         "type": "string",
-                        "description": "Texte original de l'utilisateur (contexte)",
-                    },
+                        "description": "Texte original de l'utilisateur (contexte)"
+                    }
                 },
-                "required": ["emotion", "scores"],
-            },
-        },
-    },
+                "required": ["emotion", "scores"]
+            }
+        }
+    }
 ]
 
 
-# ─── Session state ────────────────────────────────────────────────────────────
+# ─── Session state init ───────────────────────────────────────────────────────
 
 def init_state():
     defaults = {
-        "ollama_host":    "http://localhost:11434",
-        "api_base_url":   "http://localhost:8000",
-        "history":        [],
-        "agent_steps":    [],
-        "last_result":    None,
-        "system_prompt":  DEFAULT_SYSTEM_PROMPT,
-        "model":          "llama3.2",
+        "ollama_host": "http://localhost:11434",
+        "api_base_url": "http://localhost:8000",
+        "history": [],
+        "agent_steps": [],
+        "last_result": None,
+        "system_prompt": DEFAULT_SYSTEM_PROMPT,
+        "model": "llama3.2",
         "max_iterations": 6,
-        "temperature":    0.3,
-        "_last_user_text": "",
+        "temperature": 0.3,
+        "running":          False,
+        # FIX: track original user text to restore if LLM translates/modifies it
+        "_last_user_text":  "",
+        # FIX: persist temp image path so dispatch_tool can fall back to it
+        "_tmp_image_path":  None,
     }
     for k, v in defaults.items():
         if k not in st.session_state:
@@ -199,7 +418,7 @@ def _api_call(endpoint: str, method: str = "get", **kwargs) -> dict:
         resp.raise_for_status()
         return resp.json()
     except requests.exceptions.ConnectionError:
-        return {"error": f"Impossible de joindre FastAPI à {st.session_state.api_base_url}. Lancez : uvicorn api.app:app --port 8000"}
+        return {"error": f"Impossible de joindre le serveur FastAPI à {st.session_state.api_base_url}. Démarrez-le avec : uvicorn api.app:app --port 8000"}
     except Exception as e:
         return {"error": str(e)}
 
@@ -209,17 +428,14 @@ def tool_analyze_image(image_path: str) -> dict:
     if not path.exists():
         return {"error": f"Image introuvable : {image_path}"}
     with open(path, "rb") as f:
-        return _api_call("predict/image", method="post",
-                         files={"file": (path.name, f, "image/jpeg")})
+        files = {"file": (path.name, f, "image/jpeg")}
+        return _api_call("predict/image", method="post", files=files)
 
 
 def tool_analyze_text(text: str) -> dict:
-    if not isinstance(text, str):
-        text = str(text)
     if not text.strip():
         return {"error": "Le texte ne peut pas être vide"}
-    return _api_call("predict/text", method="post",
-                     json={"text": text, "include_report": False})
+    return _api_call("predict/text", method="post", json={"text": text, "include_report": False})
 
 
 def tool_analyze_multimodal(image_path: str, text: str) -> dict:
@@ -227,57 +443,56 @@ def tool_analyze_multimodal(image_path: str, text: str) -> dict:
     if not path.exists():
         return {"error": f"Image introuvable : {image_path}"}
     with open(path, "rb") as f:
-        return _api_call(
-            "predict/multimodal",
-            method="post",
-            files={"file": (path.name, f, "image/jpeg")},
-            data={"text": text, "include_report": "false"},
-        )
+        files = {"file": (path.name, f, "image/jpeg")}
+        data = {"text": text, "include_report": "false"}
+        return _api_call("predict/multimodal", method="post", files=files, data=data)
 
 
-def tool_generate_report(emotion: str, scores, user_text: str = "") -> dict:
-    """Rapport rule-based (pas d'appel API externe)."""
+def _parse_scores(scores: "dict | str | None") -> dict:
+    """Normalise scores quelle que soit la forme retournée par Ollama."""
+    if isinstance(scores, dict):
+        return scores
     if isinstance(scores, str):
         try:
-            scores = json.loads(scores)
+            parsed = json.loads(scores)
+            if isinstance(parsed, dict):
+                return parsed
         except (json.JSONDecodeError, ValueError):
-            scores = {}
-    if not isinstance(scores, dict) or not scores:
+            pass
+    return {}
+
+
+def tool_generate_report(emotion: str, scores: "dict | str", user_text: str = "") -> dict:
+    """Fallback rule-based report (no API call needed for report)."""
+    # Ollama retourne parfois scores comme une chaîne JSON — on parse défensivement
+    scores = _parse_scores(scores)
+    if not scores:
         scores = {emotion: 1.0}
 
     top3 = sorted(scores.items(), key=lambda x: x[1], reverse=True)[:3]
-    confidence = scores.get(emotion, max(scores.values()) if scores else 1.0)
-
+    meta = EMOTION_META.get(emotion, {})
     return {
-        "emotion":    emotion,
-        "scores":     scores,
-        "confidence": confidence,
-        "top3":       [{"emotion": e, "score": round(s, 4)} for e, s in top3],
-        "user_text":  user_text,
-        "report": (
-            f"Émotion dominante détectée : **{emotion}** "
-            f"(score : {confidence:.2%}). "
-            + (f"Top 3 : {', '.join(f'{e} ({s:.0%})' for e, s in top3)}. "
-               if len(top3) > 1 else "")
-            + (f'Texte analysé : « {user_text[:120]}{"…" if len(user_text) > 120 else ""} ».'
-               if user_text else "")
-        ),
+        "emotion": emotion,
+        "label_fr": meta.get("label", emotion),
+        "confidence": scores.get(emotion, 0),
+        "top_3": [{"emotion": e, "score": s} for e, s in top3],
+        "summary": f"L'émotion dominante détectée est '{meta.get('label', emotion)}' avec une confiance de {scores.get(emotion, 0)*100:.1f}%.",
+        "user_text_context": user_text[:200] if user_text else None,
     }
 
 
-# ─────────────────────────────────────────────────────────────────────────────
-# dispatch_tool
-# FIX : last_result est mis à jour UNIQUEMENT par les outils d'analyse réels
-# (analyze_text / analyze_image / analyze_multimodal).
-# generate_report reçoit souvent des scores hallucinés par le LLM → on ne
-# laisse plus ce résultat écraser les vraies prédictions du modèle.
-# ─────────────────────────────────────────────────────────────────────────────
-def dispatch_tool(tool_name: str, tool_input: dict) -> str:
+def dispatch_tool(tool_name: str, tool_input) -> str:
+    # Normalise arguments — Ollama may return a JSON string or a custom object
     if isinstance(tool_input, str):
         try:
             tool_input = json.loads(tool_input)
         except (json.JSONDecodeError, ValueError):
             tool_input = {}
+    elif not isinstance(tool_input, dict):
+        try:
+            tool_input = dict(tool_input)
+        except Exception:
+            tool_input = vars(tool_input) if hasattr(tool_input, "__dict__") else {}
 
     step = {
         "type": "tool",
@@ -286,38 +501,42 @@ def dispatch_tool(tool_name: str, tool_input: dict) -> str:
         "time": datetime.now().strftime("%H:%M:%S"),
     }
 
+    # FIX: if the LLM generated a wrong image path, fall back to the path
+    # saved in session_state when the user uploaded the image.
+    def _resolve_image_path(raw_path: str) -> str:
+        fallback = st.session_state.get("_tmp_image_path", "")
+        if raw_path and Path(str(raw_path)).exists():
+            return str(raw_path)
+        if fallback and Path(str(fallback)).exists():
+            return str(fallback)
+        return str(raw_path)  # will produce a meaningful error below
+
     if tool_name == "analyze_image":
-        path = tool_input.get("image_path", "")
-        if not path or not Path(str(path)).exists():
-            result = {"error": "Aucune image disponible. Utilise analyze_text."}
-        else:
-            result = tool_analyze_image(str(path))
+        path   = _resolve_image_path(tool_input.get("image_path", ""))
+        result = tool_analyze_image(path)
 
     elif tool_name == "analyze_text":
         text = tool_input.get("text", "")
         if isinstance(text, dict):
             text = str(list(text.values())[0]) if text else ""
         text = str(text).strip()
-        # Garde-fou : si le LLM a traduit le texte, on force le texte original
+        # FIX: restore original user text if the LLM modified/translated it
         original = st.session_state.get("_last_user_text", "")
         if original and text != original:
             text = original
         result = tool_analyze_text(text) if text else {"error": "Texte vide"}
 
     elif tool_name == "analyze_multimodal":
-        path = tool_input.get("image_path", "")
+        path = _resolve_image_path(tool_input.get("image_path", ""))
         text = tool_input.get("text", "")
         if isinstance(text, dict):
             text = str(list(text.values())[0]) if text else ""
         text = str(text).strip()
-        # Garde-fou texte original
+        # FIX: restore original user text if the LLM modified/translated it
         original = st.session_state.get("_last_user_text", "")
         if original and text != original:
             text = original
-        if not path or not Path(str(path)).exists():
-            result = {"error": "Aucune image disponible. Utilise analyze_text."}
-        else:
-            result = tool_analyze_multimodal(str(path), text)
+        result = tool_analyze_multimodal(path, text)
 
     elif tool_name == "generate_report":
         emotion   = tool_input.get("emotion", "neutral")
@@ -325,18 +544,15 @@ def dispatch_tool(tool_name: str, tool_input: dict) -> str:
         user_text = tool_input.get("user_text", "")
         if isinstance(user_text, dict):
             user_text = ""
-        # Valider l'émotion
         VALID = {"angry", "disgust", "fear", "happy", "neutral", "sad", "surprise"}
         if str(emotion) not in VALID:
             emotion = "neutral"
-
-        # Si last_result existe déjà (depuis analyze_*), utiliser ses scores réels
-        # au lieu des scores potentiellement hallucinés par le LLM
+        # FIX: use REAL model scores instead of potentially hallucinated scores
+        # from the LLM, to guarantee the report reflects the true prediction.
         if st.session_state.last_result and "scores" in st.session_state.last_result:
-            real = st.session_state.last_result
+            real    = st.session_state.last_result
             emotion = real["emotion"]
             scores  = real["scores"]
-
         result = tool_generate_report(str(emotion), scores, str(user_text))
 
     else:
@@ -348,10 +564,8 @@ def dispatch_tool(tool_name: str, tool_input: dict) -> str:
     step["result"] = result
     st.session_state.agent_steps.append(step)
 
-    # ── FIX : last_result mis à jour UNIQUEMENT par les vrais modèles ────────
-    # generate_report reçoit des scores potentiellement hallucinés par le LLM.
-    # En l'excluant ici, on garantit que l'UI affiche toujours la prédiction
-    # réelle du modèle (confidence et scores exacts de BERT/ResNet/Fusion).
+    # FIX: update last_result ONLY from real analysis tools (not generate_report)
+    # generate_report sometimes receives hallucinated scores from the LLM.
     if tool_name in ("analyze_text", "analyze_image", "analyze_multimodal"):
         if isinstance(result, dict) and "scores" in result and "emotion" in result:
             st.session_state.last_result = result
@@ -362,264 +576,364 @@ def dispatch_tool(tool_name: str, tool_input: dict) -> str:
 # ─── Ollama helpers ───────────────────────────────────────────────────────────
 
 def get_ollama_client():
+    """Return an Ollama client pointed at the configured host."""
     return ollama_lib.Client(host=st.session_state.ollama_host)
 
 
 def list_ollama_models() -> list[str]:
+    """Return list of locally available Ollama models."""
     try:
-        return [m.model for m in get_ollama_client().list().models]
+        client = get_ollama_client()
+        models = client.list()
+        return [m.model for m in models.models]
     except Exception:
         return []
 
 
 def check_ollama_health() -> tuple[bool, str]:
+    """Ping Ollama host."""
     try:
-        names = [m.model for m in get_ollama_client().list().models]
+        client = get_ollama_client()
+        models = client.list()
+        names = [m.model for m in models.models]
         return True, f"{len(names)} modèle(s) disponible(s)"
     except Exception as e:
         return False, str(e)
 
 
-def check_api_health():
-    try:
-        r = requests.get(f"{st.session_state.api_base_url}/health", timeout=3)
-        return r.status_code == 200, r.json() if r.status_code == 200 else {}
-    except Exception:
-        return False, {}
-
-
-# ─── ReAct agent loop ─────────────────────────────────────────────────────────
+# ─── Agent loop ───────────────────────────────────────────────────────────────
 
 def run_agent(user_message: str, image_path: str = None) -> str:
-    st.session_state.agent_steps  = []
-    st.session_state.last_result  = None
+    st.session_state.agent_steps       = []
+    st.session_state.last_result       = None
     st.session_state["_last_user_text"] = user_message.strip()
 
-    client = get_ollama_client()
-
+    client    = get_ollama_client()
     has_image = image_path is not None and Path(image_path).exists()
     has_text  = bool(user_message.strip())
 
-    # ── Sélection des outils selon les inputs disponibles ────────────────────
+    # FIX: select only relevant tools AND inject an explicit routing instruction.
+    # Previously, only "[Image fournie : path]" was appended as plain text, which
+    # the LLM often ignored — calling analyze_text even when an image was present.
+    # This caused the "image not analyzed" bug and the apparent "double-click" issue
+    # (first click produced no result because the wrong tool was called).
     TOOL_MAP = {t["function"]["name"]: t for t in TOOLS}
+
+    # FIX: convert Windows backslashes to forward slashes to avoid
+    # \U \L \T escape sequences in the path string passed to the LLM.
+    safe_path = str(image_path).replace("\\", "/") if image_path else ""
+
     if has_image and has_text:
         active_tools = [TOOL_MAP["analyze_multimodal"], TOOL_MAP["generate_report"]]
         instruction  = (
-            f"Appelle analyze_multimodal avec :\n"
-            f'  image_path="{image_path}"\n'
-            f'  text="{user_message}"  ← texte EXACT, ne pas modifier\n'
-            f"Puis appelle generate_report avec l'émotion et les scores EXACTS retournés."
+            "Appelle analyze_multimodal avec :\n"
+            "  image_path=\"" + safe_path + "\"\n"
+            "  text=<le texte exact de l'utilisateur, sans modification>\n"
+            "Puis appelle generate_report avec l'emotion et les scores EXACTS retournes."
         )
     elif has_image:
         active_tools = [TOOL_MAP["analyze_image"], TOOL_MAP["generate_report"]]
         instruction  = (
-            f'Appelle analyze_image avec image_path="{image_path}"\n'
-            f"Puis appelle generate_report avec l'émotion et les scores EXACTS retournés."
+            "Appelle analyze_image avec image_path=\"" + safe_path + "\"\n"
+            "Puis appelle generate_report avec l'emotion et les scores EXACTS retournes."
         )
     else:
         active_tools = [TOOL_MAP["analyze_text"], TOOL_MAP["generate_report"]]
         instruction  = (
-            f'Appelle analyze_text avec text="{user_message}"\n'
-            f"← Texte EXACT, NE PAS traduire, NE PAS modifier.\n"
-            f"Puis appelle generate_report avec l'émotion et les scores EXACTS retournés."
+            "Appelle analyze_text avec le texte exact de l'utilisateur.\n"
+            "NE PAS traduire, NE PAS modifier le texte.\n"
+            "Puis appelle generate_report avec l'emotion et les scores EXACTS retournes."
         )
 
-    content = f"{user_message}\n\n[INSTRUCTION AGENT : {instruction}]"
+    # FIX: build a safe display message — never embed user_message with
+    # apostrophes directly into the instruction (breaks LLM JSON extraction).
+    if has_image and not has_text:
+        display_msg = "Analyse l'emotion dans cette image."
+    else:
+        display_msg = user_message
+
+    content = display_msg + "\n\n[INSTRUCTION AGENT : " + instruction + "]"
 
     messages = [
         {"role": "system", "content": st.session_state.system_prompt},
         {"role": "user",   "content": content},
     ]
+
     st.session_state.agent_steps.append({
         "type": "thinking",
-        "text": f"Requête : '{user_message[:80]}'" + (" + image" if has_image else ""),
+        "text": f"Analyse de la requete : '{display_msg[:80]}'" + (" + image" if has_image else ""),
         "time": datetime.now().strftime("%H:%M:%S"),
     })
 
-    for _ in range(st.session_state.max_iterations):
+    for iteration in range(st.session_state.max_iterations):
         try:
             response = client.chat(
                 model=st.session_state.model,
                 messages=messages,
-                tools=active_tools,
+                tools=active_tools,   # FIX: only expose relevant tools
                 options={"temperature": st.session_state.temperature},
             )
         except ollama_lib.ResponseError as e:
             if "model not found" in str(e).lower():
-                return f"❌ Modèle '{st.session_state.model}' introuvable. Lancez : ollama pull {st.session_state.model}"
+                return (f"❌ Modèle '{st.session_state.model}' introuvable. "
+                        f"Lancez : `ollama pull {st.session_state.model}`")
             return f"❌ Erreur Ollama : {e}"
         except Exception as e:
-            return f"❌ Impossible de joindre Ollama : {e}"
+            return f"❌ Impossible de joindre Ollama ({st.session_state.ollama_host}) : {e}"
 
         msg = response.message
-        messages.append({
-            "role":       "assistant",
-            "content":    msg.content or "",
-            "tool_calls": msg.tool_calls or [],
-        })
 
+        # Append assistant turn to history
+        messages.append({"role": "assistant", "content": msg.content or "", "tool_calls": msg.tool_calls or []})
+
+        # ── No tool calls → final answer ──────────────────────────────────────
         if not msg.tool_calls:
-            # Réponse finale — enrichir si on a un last_result réel
-            final = msg.content or "⚠️ Pas de réponse de l'agent."
-
-            # Si le LLM n'a pas mentionné la vraie émotion, on la préfixe
-            result = st.session_state.last_result
-            if result and "emotion" in result:
-                emotion    = result["emotion"]
-                confidence = result.get("confidence", 0)
-                meta       = EMOTION_META.get(emotion, {})
-                label_fr   = meta.get("label", emotion)
-                prefix = (
-                    f"**Émotion détectée : {meta.get('emoji','')} {label_fr.upper()} "
-                    f"({confidence*100:.1f}%)**\n\n"
-                )
-                if emotion.lower() not in final.lower() and label_fr.lower() not in final.lower():
-                    final = prefix + final
-
+            final = msg.content or "⚠️ L'agent n'a pas retourné de réponse."
             st.session_state.agent_steps.append({
                 "type": "final",
                 "text": final,
-                "time": datetime.now().strftime("%H:%M:%S"),
+                "time": datetime.now().strftime("%H:%M:%S")
             })
             return final
 
+        # ── Process tool calls ────────────────────────────────────────────────
         for tc in msg.tool_calls:
-            fn  = tc.function
-            raw = fn.arguments
-            if isinstance(raw, dict):
-                tool_input = raw
-            elif isinstance(raw, str):
+            fn = tc.function
+            tool_name = fn.name
+            # Normalise arguments : Ollama retourne dict, str JSON, ou objet custom
+            raw_args = fn.arguments
+            if isinstance(raw_args, dict):
+                tool_input = raw_args
+            elif isinstance(raw_args, str):
                 try:
-                    tool_input = json.loads(raw)
-                except Exception:
+                    tool_input = json.loads(raw_args)
+                except (json.JSONDecodeError, ValueError):
                     tool_input = {}
             else:
+                # Objet custom (ex: ollama.Arguments) → conversion via vars() ou dict()
                 try:
-                    tool_input = dict(raw)
+                    tool_input = dict(raw_args)
                 except Exception:
-                    tool_input = vars(raw) if hasattr(raw, "__dict__") else {}
+                    tool_input = vars(raw_args) if hasattr(raw_args, "__dict__") else {}
 
-            result_str = dispatch_tool(fn.name, tool_input)
-            messages.append({"role": "tool", "content": result_str})
+            result_str = dispatch_tool(tool_name, tool_input)
 
-    return "⚠️ Nombre maximum d'itérations atteint sans réponse finale."
+            # Feed tool result back as a tool message
+            messages.append({
+                "role":    "tool",
+                "content": result_str,
+            })
+
+    return "⚠️ L'agent a atteint le nombre maximum d'itérations sans réponse finale."
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# SIDEBAR
-# ══════════════════════════════════════════════════════════════════════════════
+# ─── Visualization helpers ────────────────────────────────────────────────────
+
+def render_radar_chart(scores: dict) -> go.Figure:
+    emotions = list(scores.keys())
+    values = list(scores.values())
+    values_pct = [v * 100 for v in values]
+
+    colors = [EMOTION_META[e]["color"] for e in emotions]
+    dominant = max(scores, key=scores.get)
+    dominant_color = EMOTION_META[dominant]["color"]
+
+    fig = go.Figure()
+    fig.add_trace(go.Scatterpolar(
+        r=values_pct + [values_pct[0]],
+        theta=emotions + [emotions[0]],
+        fill='toself',
+        fillcolor=f"rgba{tuple(int(dominant_color.lstrip('#')[i:i+2], 16) for i in (0, 2, 4)) + (0.15,)}",
+        line=dict(color=dominant_color, width=2),
+        name="Scores",
+        hovertemplate="%{theta}: %{r:.1f}%<extra></extra>"
+    ))
+
+    fig.update_layout(
+        polar=dict(
+            bgcolor="rgba(0,0,0,0)",
+            angularaxis=dict(
+                tickfont=dict(size=11, color="#94a3b8", family="DM Sans"),
+                linecolor="#1e1e30",
+                gridcolor="#1e1e30",
+            ),
+            radialaxis=dict(
+                visible=True,
+                range=[0, 100],
+                tickfont=dict(size=9, color="#6b6b8a"),
+                gridcolor="#1e1e30",
+                linecolor="#1e1e30",
+            ),
+        ),
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        margin=dict(t=20, b=20, l=30, r=30),
+        height=280,
+        showlegend=False,
+    )
+    return fig
+
+
+def render_bar_chart(scores: dict) -> go.Figure:
+    sorted_items = sorted(scores.items(), key=lambda x: x[1], reverse=True)
+    emotions = [e for e, _ in sorted_items]
+    values = [v * 100 for _, v in sorted_items]
+    colors = [EMOTION_META[e]["color"] for e in emotions]
+    emojis = [EMOTION_META[e]["emoji"] for e in emotions]
+    labels = [f"{EMOTION_META[e]['emoji']} {EMOTION_META[e]['label']}" for e in emotions]
+
+    fig = go.Figure(go.Bar(
+        y=labels,
+        x=values,
+        orientation='h',
+        marker=dict(
+            color=colors,
+            opacity=[1.0 if i == 0 else 0.45 for i in range(len(emotions))],
+            line=dict(width=0),
+        ),
+        text=[f"{v:.1f}%" for v in values],
+        textposition="outside",
+        textfont=dict(size=11, color="#94a3b8", family="DM Sans"),
+        hovertemplate="%{y}: %{x:.1f}%<extra></extra>",
+    ))
+
+    fig.update_layout(
+        paper_bgcolor="rgba(0,0,0,0)",
+        plot_bgcolor="rgba(0,0,0,0)",
+        xaxis=dict(
+            range=[0, 115],
+            showgrid=True,
+            gridcolor="#1e1e30",
+            tickfont=dict(color="#6b6b8a", size=10),
+            zeroline=False,
+        ),
+        yaxis=dict(
+            tickfont=dict(color="#e8e8f0", size=11, family="DM Sans"),
+            categoryorder="total ascending",
+        ),
+        margin=dict(t=10, b=10, l=10, r=60),
+        height=240,
+        bargap=0.3,
+    )
+    return fig
+
+
+# ─── Check API health ─────────────────────────────────────────────────────────
+
+def check_api_health():
+    try:
+        r = requests.get(f"{st.session_state.api_base_url}/health", timeout=3)
+        return r.status_code == 200, r.json() if r.status_code == 200 else {}
+    except:
+        return False, {}
+
+
+# ─── Sidebar ──────────────────────────────────────────────────────────────────
 
 with st.sidebar:
-    st.markdown(
-        '<div class="sidebar-brand">'
-        '<div class="sidebar-logo">🎭 EmotionSense</div>'
-        '<div class="sidebar-tagline">Multimodal AI · Ollama Agent</div>'
-        '</div>',
-        unsafe_allow_html=True,
-    )
+    st.markdown('<div class="hero-title">🧠 EmotionSense</div>', unsafe_allow_html=True)
+    st.markdown('<div class="hero-sub">Agent Ollama · Multimodal</div>', unsafe_allow_html=True)
 
-    # ── Ollama ──
-    st.markdown('<div class="sidebar-section">🦙 Serveur Ollama</div>', unsafe_allow_html=True)
+    # Ollama host
+    st.markdown("#### 🦙 Serveur Ollama")
     ollama_host = st.text_input(
-        "ollama_host", value=st.session_state.ollama_host,
-        label_visibility="collapsed", placeholder="http://localhost:11434"
+        "Ollama host",
+        value=st.session_state.ollama_host,
+        label_visibility="collapsed",
+        placeholder="http://localhost:11434"
     )
     if ollama_host != st.session_state.ollama_host:
         st.session_state.ollama_host = ollama_host
 
-    if st.button("Vérifier Ollama", use_container_width=True):
-        ok, msg_txt = check_ollama_health()
-        (st.success if ok else st.error)(("✅ " if ok else "❌ ") + msg_txt)
+    col_h1, col_h2 = st.columns([2, 1])
+    with col_h1:
+        if st.button("🔍 Vérifier Ollama"):
+            ok, msg = check_ollama_health()
+            if ok:
+                st.success(f"✅ {msg}")
+            else:
+                st.error(f"❌ {msg}")
 
-    # ── FastAPI ──
-    st.markdown('<div class="sidebar-section">🌐 Serveur FastAPI</div>', unsafe_allow_html=True)
+    # FastAPI URL
+    st.markdown("#### 🌐 Serveur FastAPI")
     api_url = st.text_input(
-        "api_url", value=st.session_state.api_base_url,
-        label_visibility="collapsed"
+        "FastAPI URL",
+        value=st.session_state.api_base_url,
+        label_visibility="collapsed",
     )
     st.session_state.api_base_url = api_url
 
-    if st.button("Vérifier FastAPI", use_container_width=True):
-        ok, health = check_api_health()
-        if ok:
-            st.success(f"✅ Serveur OK · {health.get('device', '?')}")
-        else:
-            st.error("❌ Serveur inaccessible")
+    col_f1, col_f2 = st.columns([2, 1])
+    with col_f1:
+        if st.button("🔍 Vérifier FastAPI"):
+            ok, health = check_api_health()
+            if ok:
+                st.success(f"✅ Serveur OK · {health.get('device', '?')}")
+            else:
+                st.error("❌ Serveur inaccessible")
 
-    # ── Agent config ──
-    st.markdown('<div class="sidebar-section">⚙️ Configuration Agent</div>', unsafe_allow_html=True)
+    st.divider()
 
+    # ── Agent Config ──
+    st.markdown("#### ⚙️ Configuration Agent")
+
+    # Fetch available models dynamically
+    available_models = list_ollama_models()
     TOOL_CAPABLE_MODELS = [
         "llama3.2", "llama3.2:1b", "llama3.2:3b",
-        "llama3.1", "llama3.1:8b", "qwen2.5", "qwen2.5:7b",
-        "mistral", "mistral-nemo", "command-r", "gemma3",
+        "llama3.1", "llama3.1:8b", "llama3.1:70b",
+        "qwen2.5", "qwen2.5:7b", "qwen2.5:14b",
+        "mistral", "mistral-nemo",
+        "command-r", "gemma3",
     ]
-    available_models = list_ollama_models()
-    model_options    = available_models if available_models else TOOL_CAPABLE_MODELS
+    # Merge: local models first, then suggestions not yet pulled
+    model_options = available_models if available_models else TOOL_CAPABLE_MODELS
+    # Ensure current model is in list
     if st.session_state.model not in model_options:
         model_options = [st.session_state.model] + model_options
 
     model_choice = st.selectbox(
-        "Modèle Ollama", model_options,
-        index=model_options.index(st.session_state.model)
-              if st.session_state.model in model_options else 0,
-        help="Modèles supportant le tool-calling : llama3.2, qwen2.5, mistral…"
+        "Modèle Ollama",
+        model_options,
+        index=model_options.index(st.session_state.model) if st.session_state.model in model_options else 0,
+        help="Seuls les modèles supportant le tool-calling fonctionnent (llama3.2, qwen2.5, mistral...)"
     )
     st.session_state.model = model_choice
 
-    if not available_models:
-        st.caption("⚠️ Ollama inaccessible")
-        st.code(f"ollama pull {model_choice}", language="bash")
+    if available_models:
+        st.caption(f"💾 {len(available_models)} modèle(s) local (locaux)")
     else:
-        st.caption(f"💾 {len(available_models)} modèle(s) local(aux)")
+        st.caption("⚠️ Ollama inaccessible — modèles par défaut affichés")
+        st.code(f"ollama pull {model_choice}", language="bash")
 
-    st.session_state.max_iterations = st.slider(
-        "Max itérations", 2, 12, st.session_state.max_iterations)
-    st.session_state.temperature = st.slider(
-        "Température", 0.0, 1.0, st.session_state.temperature, 0.05)
+    max_iter = st.slider("Max itérations", 2, 12, st.session_state.max_iterations)
+    st.session_state.max_iterations = max_iter
+
+    temperature = st.slider("Température", 0.0, 1.0, st.session_state.temperature, 0.05)
+    st.session_state.temperature = temperature
+
+    st.divider()
 
     # ── History ──
     if st.session_state.history:
-        st.markdown('<div class="sidebar-section">🕓 Historique</div>', unsafe_allow_html=True)
-        for session in reversed(st.session_state.history[-8:]):
+        st.markdown("#### 🕓 Historique")
+        for i, session in enumerate(reversed(st.session_state.history[-8:])):
             emotion = session.get("emotion", "?")
-            meta    = EMOTION_META.get(emotion, {})
+            meta = EMOTION_META.get(emotion, {})
+            emoji = meta.get("emoji", "❓")
+            label = meta.get("label", emotion)
+            ts = session.get("timestamp", "")
+            modality = session.get("modality", "?")
             st.markdown(
-                f'<div class="hist-item">'
-                f'<div class="hist-emotion">{meta.get("emoji","❓")} {meta.get("label", emotion)}</div>'
-                f'<div class="hist-meta">'
-                f'{session.get("timestamp","")} · {session.get("modality","?")} · '
-                f'{session.get("confidence", 0)*100:.0f}%'
-                f'</div>'
-                f'</div>',
-                unsafe_allow_html=True,
+                f'<div class="history-item"><b>{emoji} {label}</b><br>'
+                f'<span style="color:#6b6b8a;font-size:0.78rem;">{ts} · {modality}</span></div>',
+                unsafe_allow_html=True
             )
 
 
-# ══════════════════════════════════════════════════════════════════════════════
-# MAIN HEADER
-# ══════════════════════════════════════════════════════════════════════════════
+# ─── Main layout ──────────────────────────────────────────────────────────────
 
-st.markdown(
-    '<div class="page-header">'
-    '<div class="page-title">🎭 EmotionSense AI</div>'
-    '<div class="page-subtitle">'
-    "Reconnaissance d'émotions multimodale — Deep Learning + Agent Ollama"
-    '</div>'
-    '<div class="page-badges">'
-    '<span class="page-badge">ResNet-50</span>'
-    '<span class="page-badge">BERT</span>'
-    '<span class="page-badge">Attention Fusion ~97.7%</span>'
-    '<span class="page-badge">ReAct Agent</span>'
-    '<span class="page-badge">FER2013</span>'
-    '</div>'
-    '</div>',
-    unsafe_allow_html=True,
-)
-
-tab_analyse, tab_agent, tab_improve = st.tabs(
-    ["🎯  Analyse", "🤖  Agent & Raisonnement", "🔧  Améliorer l'Agent"]
-)
+tab_analyse, tab_agent, tab_improve = st.tabs(["🎯 Analyse", "🤖 Agent & Raisonnement", "🔧 Améliorer l'Agent"])
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -627,100 +941,89 @@ tab_analyse, tab_agent, tab_improve = st.tabs(
 # ══════════════════════════════════════════════════════════════════════════════
 
 with tab_analyse:
-    col_in, col_out = st.columns([1, 1], gap="large")
+    col_input, col_result = st.columns([1, 1], gap="large")
 
-    # ── Input panel ──────────────────────────────────────────────────────────
-    with col_in:
-        st.markdown('<div class="input-card">', unsafe_allow_html=True)
-        st.markdown('<div class="card-title">📝 Entrée</div>', unsafe_allow_html=True)
+    with col_input:
+        st.markdown('<div class="card card-accent">', unsafe_allow_html=True)
+        st.markdown("### 📝 Entrée")
 
         user_text = st.text_area(
-            "texte",
-            placeholder="Écrivez quelque chose… ex : « I feel so devastated today »",
-            height=110,
+            "Texte à analyser",
+            placeholder="Écrivez quelque chose... ex: 'Je me sens vraiment débordé aujourd'hui'",
+            height=100,
             label_visibility="collapsed",
         )
-
-        st.markdown('<div style="margin-top:1rem"></div>', unsafe_allow_html=True)
 
         uploaded_image = st.file_uploader(
             "Image faciale (optionnel)",
             type=["jpg", "jpeg", "png", "webp"],
-            help="Téléchargez une photo de visage pour l'analyse faciale",
+            help="Téléchargez une image de visage pour l'analyse faciale"
         )
 
         if uploaded_image:
-            st.image(uploaded_image, use_column_width=True)
+            st.image(uploaded_image, caption="Image chargée", use_column_width=True)
 
-        # Mode indicator
-        st.markdown('<div style="margin-top:0.8rem"></div>', unsafe_allow_html=True)
+        # Modality indicator
         if user_text and uploaded_image:
-            st.markdown(
-                '<div class="mode-pill multi">🔮 Mode Multimodal — Attention Fusion (~97.7%)</div>',
-                unsafe_allow_html=True,
-            )
+            st.info("🔮 Mode **Multimodal** — Fusion Attention (précision max ~83%)")
         elif uploaded_image:
-            st.markdown(
-                '<div class="mode-pill image">🖼️ Mode Image — ResNet-50</div>',
-                unsafe_allow_html=True,
-            )
+            st.info("🖼️ Mode **Image** — ResNet-50")
         elif user_text:
-            st.markdown(
-                '<div class="mode-pill text">📝 Mode Texte — BERT</div>',
-                unsafe_allow_html=True,
-            )
+            st.info("📝 Mode **Texte** — BERT")
         else:
-            st.markdown(
-                '<div class="mode-pill empty">💡 Entrez du texte et/ou une image</div>',
-                unsafe_allow_html=True,
-            )
+            st.warning("Entrez du texte et/ou une image pour commencer.")
 
         st.markdown('</div>', unsafe_allow_html=True)
-        st.markdown('<div style="margin-top:1rem"></div>', unsafe_allow_html=True)
-        run_btn = st.button("🚀  Analyser avec l'Agent AI", use_container_width=True)
 
-    # ── Result panel ─────────────────────────────────────────────────────────
-    with col_out:
+        run_btn = st.button("🚀 Analyser avec l'agent AI", use_container_width=True)
+
+    with col_result:
         if run_btn:
             if not user_text and not uploaded_image:
                 st.error("Fournissez du texte ou une image.")
             elif not st.session_state.ollama_host:
                 st.error("URL Ollama manquante dans la sidebar.")
             else:
+                # FIX: Save image to temp file AND persist path in session_state
+                # so dispatch_tool._resolve_image_path() can fall back to it
+                # if the LLM generates a wrong/non-existent path.
                 tmp_path = None
                 if uploaded_image:
                     suffix = Path(uploaded_image.name).suffix
                     with tempfile.NamedTemporaryFile(delete=False, suffix=suffix) as tmp:
                         tmp.write(uploaded_image.getvalue())
                         tmp_path = tmp.name
+                    st.session_state["_tmp_image_path"] = tmp_path
+                else:
+                    st.session_state["_tmp_image_path"] = None
 
-                msg = user_text if user_text else "Analyse l'émotion dans cette image."
+                # FIX: pass real user_text (possibly empty) to run_agent
+                # so has_text is correctly False when no text was typed.
+                # The fallback display message is built inside run_agent.
+
+
 
                 with st.spinner("L'agent réfléchit… (Ollama)"):
                     t0 = time.time()
-                    final_response = run_agent(msg, tmp_path)
+                    final_response = run_agent(user_text.strip(), tmp_path)
                     elapsed = time.time() - t0
 
+                # Display results
                 result = st.session_state.last_result
 
                 if result and "emotion" in result:
-                    emotion    = result["emotion"]
-                    meta       = EMOTION_META.get(emotion, {})
+                    emotion = result["emotion"]
+                    meta = EMOTION_META.get(emotion, {})
                     confidence = result.get("confidence", 0)
-                    color      = meta.get("color", "#3B4EE8")
 
-                    # ── Emotion result card ──
+                    # Emotion badge
+                    badge_color = meta.get("color", "#7c6af7")
                     st.markdown(
-                        f'<div class="result-card" style="border-top:4px solid {color};">'
-                        f'<div style="display:flex;align-items:center;gap:1.2rem;margin-bottom:1.2rem;">'
-                        f'<div class="result-emoji">{meta.get("emoji","❓")}</div>'
-                        f'<div>'
-                        f'<div class="result-emotion-name" style="color:{color};">'
-                        f'{meta.get("label", emotion).upper()}</div>'
-                        f'<div class="result-confidence">Confiance : {confidence*100:.1f}%</div>'
-                        f'</div>'
-                        f'</div>',
-                        unsafe_allow_html=True,
+                        f'<div style="text-align:center;margin-bottom:1rem;">'
+                        f'<span class="emotion-badge" style="background:{badge_color}22;color:{badge_color};border:1px solid {badge_color}44;">'
+                        f'{meta.get("emoji","❓")} {meta.get("label", emotion).upper()} — {confidence*100:.1f}%'
+                        f'</span></div>',
+                        unsafe_allow_html=True
                     )
 
                     # Charts
@@ -728,65 +1031,43 @@ with tab_analyse:
                     if scores:
                         c1, c2 = st.columns(2)
                         with c1:
-                            st.plotly_chart(render_radar_chart(scores),
-                                            use_container_width=True)
+                            st.plotly_chart(render_radar_chart(scores), use_container_width=True)
                         with c2:
-                            st.plotly_chart(render_bar_chart(scores),
-                                            use_container_width=True)
+                            st.plotly_chart(render_bar_chart(scores), use_container_width=True)
 
-                    st.markdown('</div>', unsafe_allow_html=True)
-
-                    # Determine modality used
+                    # Modality
                     steps = st.session_state.agent_steps
-                    tool_used = next(
-                        (s["name"] for s in steps if s.get("type") == "tool"
-                         and s.get("name") in
-                         ["analyze_image", "analyze_text", "analyze_multimodal"]),
-                        "?"
-                    )
-                    modality_map = {
-                        "analyze_image":      "Image",
-                        "analyze_text":       "Texte",
-                        "analyze_multimodal": "Multimodal",
-                    }
+                    tool_used = next((s["name"] for s in steps if s.get("type") == "tool" and s.get("name") in ["analyze_image", "analyze_text", "analyze_multimodal"]), "?")
+                    modality_map = {"analyze_image": "Image", "analyze_text": "Texte", "analyze_multimodal": "Multimodal"}
                     modality = modality_map.get(tool_used, "?")
 
                     # Save to history
                     st.session_state.history.append({
-                        "emotion":    emotion,
+                        "emotion": emotion,
                         "confidence": confidence,
-                        "scores":     scores,
-                        "response":   final_response,
-                        "modality":   modality,
-                        "elapsed":    round(elapsed, 1),
-                        "timestamp":  datetime.now().strftime("%H:%M"),
+                        "scores": scores,
+                        "response": final_response,
+                        "modality": modality,
+                        "elapsed": round(elapsed, 1),
+                        "timestamp": datetime.now().strftime("%H:%M"),
                     })
+
                 else:
-                    st.markdown(
-                        '<div class="card">'
-                        '<div class="card-title">💬 Réponse de l\'agent</div>',
-                        unsafe_allow_html=True,
-                    )
+                    st.markdown('<div class="card">', unsafe_allow_html=True)
+                    st.markdown("### Réponse de l'agent")
                     st.markdown(final_response)
                     st.markdown('</div>', unsafe_allow_html=True)
 
-        # Show last detailed response
+        # Show last response if exists
         if st.session_state.history:
             last = st.session_state.history[-1]
-            st.markdown(
-                '<div class="card" style="margin-top:1.5rem;">'
-                '<div class="card-title">💬 Rapport détaillé</div>',
-                unsafe_allow_html=True,
-            )
+            st.markdown('<div class="card">', unsafe_allow_html=True)
+            st.markdown("### 💬 Réponse détaillée")
             st.markdown(last.get("response", ""))
             st.markdown(
-                f'<div style="margin-top:0.8rem;padding-top:0.8rem;'
-                f'border-top:1px solid #EEF0F8;font-size:0.78rem;color:#8F95B2;">'
-                f'⏱ {last.get("elapsed","?")}s &nbsp;·&nbsp; '
-                f'🧠 {last.get("modality","?")} &nbsp;·&nbsp; '
-                f'{last.get("timestamp","")}'
-                f'</div>',
-                unsafe_allow_html=True,
+                f'<div style="color:#6b6b8a;font-size:0.8rem;margin-top:0.5rem;">'
+                f'⏱ {last.get("elapsed","?")}s · 🧠 {last.get("modality","?")} · {last.get("timestamp","")}</div>',
+                unsafe_allow_html=True
             )
             st.markdown('</div>', unsafe_allow_html=True)
 
@@ -796,113 +1077,87 @@ with tab_analyse:
 # ══════════════════════════════════════════════════════════════════════════════
 
 with tab_agent:
-    st.markdown(
-        '<div class="card-title" style="font-size:0.95rem;color:#1A1F36;'
-        'text-transform:none;letter-spacing:0;">'
-        '🤖 Trace de raisonnement — Boucle ReAct (Reasoning → Action → Observation)'
-        '</div>',
-        unsafe_allow_html=True,
-    )
-    st.caption("Chaque itération du loop agent est affichée ici après une analyse.")
+    st.markdown("### 🤖 Trace de raisonnement de l'agent (ReAct)")
+    st.caption("Chaque itération du loop Reasoning → Action → Observation est affichée ici.")
 
     if not st.session_state.agent_steps:
         st.markdown(
-            '<div style="text-align:center;color:#8F95B2;padding:4rem 2rem;'
-            'background:#FFFFFF;border:1px dashed #C7CBFA;border-radius:16px;margin-top:1rem;">'
-            '<div style="font-size:2.5rem;margin-bottom:0.8rem;">⚡</div>'
-            '<div style="font-weight:600;color:#3B4EE8;">Aucune analyse lancée</div>'
-            '<div style="font-size:0.85rem;margin-top:0.3rem;">'
-            'Lancez une analyse dans l\'onglet <b>Analyse</b></div>'
+            '<div style="text-align:center;color:#6b6b8a;padding:3rem;">'
+            '⚡ Lancez une analyse dans l\'onglet "Analyse" pour voir le raisonnement ici.'
             '</div>',
-            unsafe_allow_html=True,
+            unsafe_allow_html=True
         )
     else:
+        step_icons = {
+            "thinking": ("💭", "step-thinking", "RAISONNEMENT"),
+            "tool":     ("🔧", "step-tool",     "APPEL OUTIL"),
+            "final":    ("✅", "step-final",    "RÉPONSE FINALE"),
+        }
+
         for i, step in enumerate(st.session_state.agent_steps):
             stype = step.get("type", "thinking")
-            ts    = step.get("time", "")
+            icon, css_class, label = step_icons.get(stype, ("❓", "", "?"))
+            ts = step.get("time", "")
 
             if stype == "thinking":
                 st.markdown(
-                    f'<div class="trace-step thinking">'
-                    f'<div class="trace-label thinking">💭 [{ts}] Raisonnement</div>'
-                    f'{step.get("text","")}'
+                    f'<div class="agent-step {css_class}">'
+                    f'<span style="color:#6b6b8a;font-size:0.75rem;">[{ts}] {label}</span><br>'
+                    f'{icon} {step.get("text","")}'
                     f'</div>',
-                    unsafe_allow_html=True,
+                    unsafe_allow_html=True
                 )
 
             elif stype == "tool":
                 tool_name = step.get("name", "?")
-                inp       = step.get("input", {})
-                result    = step.get("result", {})
-                emotion   = result.get("emotion") if isinstance(result, dict) else None
-                conf      = result.get("confidence", 0) if isinstance(result, dict) else 0
-                err       = result.get("error") if isinstance(result, dict) else None
+                inp = step.get("input", {})
+                result = step.get("result", {})
+                emotion = result.get("emotion")
+                conf = result.get("confidence", 0)
+                err = result.get("error")
 
-                with st.expander(
-                    f"🔧  {tool_name}  [{ts}]",
-                    expanded=(i == len(st.session_state.agent_steps) - 1)
-                ):
+                with st.expander(f"🔧 {tool_name}  [{ts}]", expanded=(i == len(st.session_state.agent_steps) - 1)):
                     c1, c2 = st.columns(2)
                     with c1:
                         st.markdown("**Input**")
-                        st.code(json.dumps(inp, ensure_ascii=False, indent=2),
-                                language="json")
+                        st.code(json.dumps(inp, ensure_ascii=False, indent=2), language="json")
                     with c2:
                         st.markdown("**Résultat**")
                         if err:
                             st.error(err)
-                        elif emotion and tool_name in (
-                            "analyze_text", "analyze_image", "analyze_multimodal"
-                        ):
-                            meta  = EMOTION_META.get(emotion, {})
-                            color = meta.get("color", "#3B4EE8")
-                            st.markdown(
-                                f'<div style="background:{meta.get("bg","#EEF0FD")};'
-                                f'border:1px solid {color}33;border-radius:10px;'
-                                f'padding:0.8rem 1rem;">'
-                                f'<b style="color:{color};font-size:1.1rem;">'
-                                f'{meta.get("emoji","?")} {meta.get("label",emotion)}</b>'
-                                f'<div style="font-size:0.82rem;color:#8F95B2;margin-top:0.2rem;">'
-                                f'{conf*100:.1f}% confiance</div>'
-                                f'</div>',
-                                unsafe_allow_html=True,
-                            )
+                        elif emotion:
+                            meta = EMOTION_META.get(emotion, {})
+                            st.success(f"{meta.get('emoji','?')} {meta.get('label', emotion)} · {conf*100:.1f}%")
                             if "scores" in result:
-                                top3 = sorted(
-                                    result["scores"].items(),
-                                    key=lambda x: x[1], reverse=True
-                                )[:3]
+                                top3 = sorted(result["scores"].items(), key=lambda x: x[1], reverse=True)[:3]
                                 for e, s in top3:
                                     m = EMOTION_META.get(e, {})
-                                    st.progress(
-                                        s,
-                                        text=f"{m.get('emoji','')} {m.get('label',e)}: {s*100:.1f}%"
-                                    )
+                                    st.progress(s, text=f"{m.get('emoji','')} {m.get('label',e)}: {s*100:.1f}%")
                         else:
-                            st.code(
-                                json.dumps(result, ensure_ascii=False, indent=2)[:500],
-                                language="json"
-                            )
+                            st.code(json.dumps(result, ensure_ascii=False, indent=2)[:400], language="json")
 
             elif stype == "final":
                 st.markdown(
-                    f'<div class="trace-step final">'
-                    f'<div class="trace-label final">✅ [{ts}] Réponse finale</div>'
-                    f'Réponse générée — {len(step.get("text",""))} caractères'
+                    f'<div class="agent-step {css_class}">'
+                    f'<span style="color:#6b6b8a;font-size:0.75rem;">[{ts}] {label}</span><br>'
+                    f'{icon} Réponse finale générée ({len(step.get("text",""))} caractères)'
                     f'</div>',
-                    unsafe_allow_html=True,
+                    unsafe_allow_html=True
                 )
 
-        # KPIs
-        st.markdown('<div style="margin-top:1.5rem"></div>', unsafe_allow_html=True)
+        # Summary metrics
+        st.markdown("---")
         n_tools = sum(1 for s in st.session_state.agent_steps if s.get("type") == "tool")
+        n_iter = n_tools
+        st.markdown("#### 📊 Résumé de la session")
         c1, c2, c3, c4 = st.columns(4)
         with c1:
-            st.metric("Étapes agent",   len(st.session_state.agent_steps))
+            st.metric("Étapes agent", len(st.session_state.agent_steps))
         with c2:
             st.metric("Outils appelés", n_tools)
         with c3:
-            st.metric("Modèle", st.session_state.model.split(":")[0].capitalize())
+            model_short = st.session_state.model.split(":")[0].capitalize()
+            st.metric("Modèle", model_short)
         with c4:
             st.metric("Max itérations", st.session_state.max_iterations)
 
@@ -912,167 +1167,140 @@ with tab_agent:
 # ══════════════════════════════════════════════════════════════════════════════
 
 with tab_improve:
-    st.markdown(
-        '<div class="card-title" style="font-size:0.95rem;color:#1A1F36;'
-        'text-transform:none;letter-spacing:0;">'
-        '🔧 Personnaliser le comportement de l\'Agent'
-        '</div>',
-        unsafe_allow_html=True,
-    )
-    st.caption("Modifiez le system prompt, les descriptions d'outils, et testez en direct.")
+    st.markdown("### 🔧 Améliorer l'Agent AI")
+    st.caption("Modifiez le system prompt, les outils, les paramètres, et testez en direct.")
 
-    col_p, col_t = st.columns([1, 1], gap="large")
+    col_prompt, col_tools = st.columns([1, 1], gap="large")
 
-    # ── System Prompt Editor ─────────────────────────────────────────────────
-    with col_p:
-        st.markdown('<div class="card-title">📋 System Prompt</div>', unsafe_allow_html=True)
+    with col_prompt:
+        # ── System Prompt Editor ──
+        st.markdown("#### 📋 System Prompt")
+        st.caption("Modifiez les instructions de l'agent. Cela change son comportement de raisonnement.")
 
         new_prompt = st.text_area(
-            "system_prompt",
+            "System Prompt",
             value=st.session_state.system_prompt,
-            height=340,
+            height=380,
             label_visibility="collapsed",
         )
 
-        col_b1, col_b2 = st.columns(2)
-        with col_b1:
-            if st.button("💾  Appliquer", use_container_width=True):
+        col_btn1, col_btn2 = st.columns(2)
+        with col_btn1:
+            if st.button("💾 Appliquer", use_container_width=True):
                 st.session_state.system_prompt = new_prompt
                 st.success("✅ System prompt mis à jour !")
-        with col_b2:
-            if st.button("🔄  Réinitialiser", use_container_width=True):
+        with col_btn2:
+            if st.button("🔄 Réinitialiser", use_container_width=True):
                 st.session_state.system_prompt = DEFAULT_SYSTEM_PROMPT
                 st.rerun()
 
-        # Suggestions
-        st.markdown('<div style="margin-top:1.5rem"></div>', unsafe_allow_html=True)
-        st.markdown('<div class="card-title">💡 Suggestions rapides</div>', unsafe_allow_html=True)
+        # ── Prompt suggestions ──
+        st.markdown("#### 💡 Suggestions d'amélioration")
 
-        IMPROVEMENTS = [
+        improvements = [
             {
                 "title": "🌍 Multilingue",
-                "desc":  "Répondre en arabe si l'utilisateur écrit en arabe",
-                "patch": "\n- Si l'utilisateur écrit en arabe → réponds en arabe\n- Si l'utilisateur écrit en anglais → réponds en anglais",
+                "desc": "Répondre en arabe si l'utilisateur écrit en arabe",
+                "patch": "\n- Si l'utilisateur écrit en arabe → réponds en arabe (العربية)\n- Si l'utilisateur écrit en anglais → réponds en anglais"
             },
             {
-                "title": "🎯 Intervalle de confiance",
-                "desc":  "Mentionner le niveau de certitude",
-                "patch": (
-                    "\n- Mentionne le niveau de certitude : faible (<40%), moyen (40-70%), élevé (>70%)"
-                    "\n- Indique l'intervalle ±5% pour BERT, ±3% pour Fusion"
-                ),
+                "title": "🎯 Précision++",
+                "desc": "Toujours mentionner l'intervalle de confiance",
+                "patch": "\n- Mentionne toujours l'intervalle de confiance (±5% pour BERT, ±3% pour Fusion)\n- Indique le niveau de certitude : faible (<40%), moyen (40-70%), élevé (>70%)"
             },
             {
                 "title": "📊 Top-5 émotions",
-                "desc":  "Afficher 5 émotions au lieu de 3",
-                "patch": "\n- Ta réponse finale doit toujours inclure le TOP-5 des émotions avec leurs probabilités",
+                "desc": "Afficher les 5 meilleures émotions au lieu de 3",
+                "patch": "\n- Ta réponse finale doit inclure le TOP-5 des émotions avec leurs probabilités (pas seulement top-3)"
             },
             {
                 "title": "🔁 Auto-retry",
-                "desc":  "Si erreur serveur, essayer les outils séparément",
-                "patch": (
-                    "\n- Si analyze_multimodal échoue → essaie analyze_image puis analyze_text séparément"
-                    "\n- En cas d'erreur FastAPI, propose de vérifier le serveur"
-                ),
+                "desc": "Si erreur serveur, suggérer une alternative",
+                "patch": "\n- Si analyze_multimodal échoue → essaie analyze_image puis analyze_text séparément\n- En cas d'erreur serveur FastAPI, propose à l'utilisateur de vérifier le serveur"
             },
         ]
 
-        for imp in IMPROVEMENTS:
+        for imp in improvements:
             with st.expander(f"{imp['title']} — {imp['desc']}"):
-                st.code(imp["patch"], language="text")
-                if st.button("➕ Ajouter au prompt", key=f"add_{imp['title']}"):
-                    st.session_state.system_prompt += imp["patch"]
+                st.code(imp['patch'], language="text")
+                if st.button(f"➕ Ajouter au prompt", key=f"add_{imp['title']}"):
+                    st.session_state.system_prompt += imp['patch']
                     st.success(f"Ajouté : {imp['title']}")
 
-        # Prompt stats
-        st.markdown('<div style="margin-top:1.5rem"></div>', unsafe_allow_html=True)
-        st.markdown('<div class="card-title">📈 Stats du prompt</div>', unsafe_allow_html=True)
-        prompt = st.session_state.system_prompt
-        cs1, cs2, cs3 = st.columns(3)
-        with cs1:
-            st.metric("Tokens ~",         len(prompt.split()))
-        with cs2:
-            st.metric("Règles détectées", prompt.count("-"))
-        with cs3:
-            lang = "FR" if "français" in prompt else "EN" if "english" in prompt.lower() else "?"
-            st.metric("Langue",           lang)
-
-    # ── Tool Editor ──────────────────────────────────────────────────────────
-    with col_t:
-        st.markdown('<div class="card-title">🛠️ Outils de l\'Agent</div>', unsafe_allow_html=True)
-        st.caption("La description de chaque outil influence quand l'agent décide de l'appeler.")
+    with col_tools:
+        # ── Tool editor ──
+        st.markdown("#### 🛠️ Outils disponibles")
+        st.caption("Visualisez et comprenez les outils de l'agent. Les descriptions influencent quand Claude choisit chaque outil.")
 
         for tool in TOOLS:
             fn = tool["function"]
             with st.expander(f"🔧 `{fn['name']}`"):
-                st.markdown("**Description actuelle :**")
-                st.info(fn["description"])
-                st.markdown(
-                    f"**Paramètres requis :** `{', '.join(fn['parameters'].get('required', []))}`"
-                )
+                st.markdown("**Description :**")
+                st.markdown(f"> {fn['description']}")
+                st.markdown(f"**Paramètres requis :** `{', '.join(fn['parameters'].get('required', []))}`")
+
                 new_desc = st.text_area(
-                    "Nouvelle description",
-                    value=fn["description"],
+                    "Modifier la description",
+                    value=fn['description'],
                     height=80,
-                    key=f"tool_desc_{fn['name']}",
+                    key=f"tool_desc_{fn['name']}"
                 )
                 if st.button("Mettre à jour", key=f"update_{fn['name']}"):
                     for t in TOOLS:
                         if t["function"]["name"] == fn["name"]:
                             t["function"]["description"] = new_desc
-                    st.success(f"✅ `{fn['name']}` mis à jour !")
+                    st.success(f"✅ Description de `{fn['name']}` mise à jour !")
 
-        # Add custom tool
-        st.markdown('<div style="margin-top:1.5rem"></div>', unsafe_allow_html=True)
-        st.markdown(
-            '<div class="card-title">➕ Ajouter un outil personnalisé</div>',
-            unsafe_allow_html=True,
-        )
+        st.markdown("---")
+
+        # ── Add custom tool ──
+        st.markdown("#### ➕ Ajouter un outil personnalisé")
         with st.expander("Nouvel outil (simulation)"):
-            new_name  = st.text_input("Nom",        placeholder="analyze_audio")
-            new_desc2 = st.text_area("Description", placeholder="Analyse la prosodie vocale…", height=70)
-            new_param = st.text_input("Paramètre",  placeholder="audio_path")
+            new_tool_name = st.text_input("Nom de l'outil", placeholder="analyze_audio")
+            new_tool_desc = st.text_area("Description", placeholder="Analyse la prosodie vocale pour détecter les émotions...", height=80)
+            new_tool_params = st.text_input("Paramètre requis", placeholder="audio_path")
             if st.button("➕ Ajouter l'outil"):
-                if new_name and new_desc2:
+                if new_tool_name and new_tool_desc:
                     TOOLS.append({
                         "type": "function",
                         "function": {
-                            "name": new_name,
-                            "description": new_desc2,
+                            "name": new_tool_name,
+                            "description": new_tool_desc,
                             "parameters": {
                                 "type": "object",
-                                "properties": {new_param: {"type": "string"}} if new_param else {},
-                                "required": [new_param] if new_param else [],
-                            },
-                        },
+                                "properties": {new_tool_params: {"type": "string"}} if new_tool_params else {},
+                                "required": [new_tool_params] if new_tool_params else []
+                            }
+                        }
                     })
-                    st.success(
-                        f"✅ `{new_name}` ajouté ! Implémentez le handler dans `dispatch_tool`."
-                    )
+                    st.success(f"✅ Outil `{new_tool_name}` ajouté ! (implémentez le handler dans `dispatch_tool`)")
+        st.markdown("---")
 
-        # Quick test
-        st.markdown('<div style="margin-top:1.5rem"></div>', unsafe_allow_html=True)
-        st.markdown('<div class="card-title">🧪 Test rapide</div>', unsafe_allow_html=True)
-        test_text = st.text_input("Phrase de test", placeholder="I feel so devastated")
-        if st.button("🔬  Tester (texte seul)", use_container_width=True):
+        # ── Test prompt inline ──
+        st.markdown("#### 🧪 Test rapide du prompt")
+        test_text = st.text_input("Phrase de test", placeholder="Je suis tellement en colère !")
+        if st.button("🔬 Tester (texte seul)", use_container_width=True):
             if test_text:
                 with st.spinner("Test en cours…"):
                     resp = run_agent(test_text)
                 result = st.session_state.last_result
                 if result:
                     emotion = result.get("emotion", "?")
-                    meta    = EMOTION_META.get(emotion, {})
-                    color   = meta.get("color", "#3B4EE8")
-                    st.markdown(
-                        f'<div style="background:{meta.get("bg","#EEF0FD")};'
-                        f'border:1px solid {color}33;border-radius:10px;'
-                        f'padding:0.8rem 1rem;margin:0.5rem 0;">'
-                        f'<b style="color:{color};">'
-                        f'{meta.get("emoji","?")} {meta.get("label",emotion)}</b>'
-                        f' — {result.get("confidence",0)*100:.1f}%'
-                        f'</div>',
-                        unsafe_allow_html=True,
-                    )
+                    meta = EMOTION_META.get(emotion, {})
+                    st.success(f"{meta.get('emoji','?')} {meta.get('label', emotion)} · {result.get('confidence',0)*100:.1f}%")
                 st.markdown(resp[:500] + "…" if len(resp) > 500 else resp)
             else:
                 st.warning("Entrez une phrase de test.")
+
+        # ── Prompt stats ──
+        st.markdown("---")
+        st.markdown("#### 📈 Stats du prompt actuel")
+        prompt = st.session_state.system_prompt
+        c1, c2, c3 = st.columns(3)
+        with c1:
+            st.metric("Tokens ~", len(prompt.split()))
+        with c2:
+            st.metric("Règles détectées", prompt.count("-"))
+        with c3:
+            rules_lang = "FR" if "français" in prompt else "EN" if "english" in prompt.lower() else "?"
+            st.metric("Langue principale", rules_lang)
