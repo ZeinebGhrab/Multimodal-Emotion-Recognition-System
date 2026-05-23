@@ -78,8 +78,8 @@ The best configuration — **Attention Fusion** of ResNet-50 + BERT — reaches 
                  └──────────┬──────────┘
                             │
              ┌──────────────▼──────────────┐
-             │   Ollama ReAct Agent         │
-             │  (reasoning + tool routing)  │
+             │   Ollama ReAct Agent        │
+             │  (reasoning + tool routing) │
              └──────────────┬──────────────┘
                             │
              ┌──────────────▼──────────────┐
