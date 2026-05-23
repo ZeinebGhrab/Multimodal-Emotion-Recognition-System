@@ -134,6 +134,21 @@ class AlignedMultimodalDatasetBERT(Dataset):
                 self.imgs_by_label[lbl].append(idx)
 
         # ── Textes ────────────────────────────────────────────────────────────
+        # Textes par défaut pour les classes absentes du dataset NLP (disgust=1, neutral=4)
+        DEFAULT_TEXTS = {
+            1: [
+                "I feel disgusted", "this is revolting", "I am filled with disgust",
+                "that is absolutely disgusting", "I find this repulsive",
+                "this makes me feel sick", "how disgusting", "I am repulsed by this",
+            ],
+            4: [
+                "I feel nothing in particular", "feeling calm and neutral",
+                "neutral mood today", "I have no strong feelings right now",
+                "everything is fine, nothing special", "I feel indifferent",
+                "no particular emotion at the moment", "just a normal day",
+            ],
+        }
+
         df = load_emotion_csv(text_csv)
         self.texts_by_label = {i: [] for i in range(7)}
         for _, row in df.iterrows():
@@ -142,16 +157,15 @@ class AlignedMultimodalDatasetBERT(Dataset):
             if txt and 0 <= lbl <= 6:
                 self.texts_by_label[lbl].append(txt)
 
-        # ── Paires valides ────────────────────────────────────────────────────
-        valid_classes = [
-            c for c in range(7)
-            if self.imgs_by_label[c] and self.texts_by_label[c]
-        ]
+        # Ajouter les textes par défaut pour disgust et neutral
+        for lbl, texts in DEFAULT_TEXTS.items():
+            if not self.texts_by_label[lbl]:
+                self.texts_by_label[lbl] = texts
+                print(f"  [AlignedDatasetBERT] '{self.FOLDER_CLASSES[lbl]}' : "
+                      f"{len(texts)} textes par défaut ajoutés")
 
-        missing_text = [self.FOLDER_CLASSES[c] for c in range(7)
-                        if not self.texts_by_label[c]]
-        if missing_text:
-            print(f"  [AlignedDatasetBERT] Classes sans texte (attendu) : {missing_text}")
+        # ── Toutes les classes ayant des images sont valides ──────────────────
+        valid_classes = [c for c in range(7) if self.imgs_by_label[c]]
 
         self.samples = [
             (lbl, img_idx)
@@ -491,8 +505,31 @@ def main():
     print(f"[Multimodal Train] Total params     : {total:,}")
     print(f"[Multimodal Train] Trainable params : {trainable:,}")
 
+    # ── Class weights (inverse-frequency) to handle imbalance ────────────────
+    # Example: disgust=392 vs happy=6484 → happy is weighted down, disgust up
+    num_classes = cfg["emotions"]["num_classes"]
+
+    if using_real_data and hasattr(train_ds, "imgs_by_label"):
+        counts = torch.zeros(num_classes)
+        for lbl, indices in train_ds.imgs_by_label.items():
+            counts[lbl] = len(indices)
+        # Replace zeros (classes with no images) with 1 to avoid division by zero
+        counts = counts.clamp(min=1)
+        # weight[i] = total / (num_classes * count[i]) — standard balanced weighting
+        class_weights = counts.sum() / (num_classes * counts)
+        class_weights = class_weights.to(device)
+        print(f"\n[Loss] Class weights (inverse-frequency):")
+        for i, (name, w) in enumerate(zip(cfg["emotions"]["classes"], class_weights)):
+            print(f"  {name:>10}: count={int(counts[i]):5d}  weight={w:.4f}")
+    else:
+        class_weights = None
+        print("\n[Loss] No class weights (dummy data or weights unavailable)")
+
     # Loss et Optimizer
-    criterion = nn.CrossEntropyLoss(label_smoothing=0.1)
+    criterion = nn.CrossEntropyLoss(
+        weight=class_weights,
+        label_smoothing=0.1
+    )
 
     encoder_params = [
         p for p in (list(model.image_encoder.parameters()) +

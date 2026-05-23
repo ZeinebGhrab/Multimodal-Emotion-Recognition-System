@@ -1,12 +1,11 @@
-🤖 src/agent/ — Ollama ReAct Agent
-====================================
+# 🤖 src/agent/ — Ollama ReAct Agent
 
 ## Overview
 
 The agent module implements an autonomous **ReAct** loop
 (Reason → Act → Observe) that orchestrates emotion inference by
 selecting and calling the right tool based on the available inputs.
-The LLM does the reasoning; the tools do the actual inference.
+The LLM handles reasoning; the tools handle actual inference.
 
 ```
 src/agent/
@@ -26,14 +25,14 @@ User input (text? image? both?)
     │  (llama3.2 etc.)    │
     └──────────┬──────────┘
                │  tool_calls in response?
-    ┌──────────▼────────────────────────────────┐
-    │  Tool Dispatcher (dispatch_tool)           │
-    │                                            │
-    │  analyze_text       → FastAPI /predict/text│
-    │  analyze_image      → FastAPI /predict/image│
-    │  analyze_multimodal → FastAPI /predict/mm  │
-    │  generate_report    → local rule-based     │
-    └──────────┬─────────────────────────────────┘
+    ┌──────────▼───────────────────────────────────┐
+    │  Tool Dispatcher (dispatch_tool)              │
+    │                                               │
+    │  analyze_text       → FastAPI /predict/text   │
+    │  analyze_image      → FastAPI /predict/image  │
+    │  analyze_multimodal → FastAPI /predict/mm     │
+    │  generate_report    → local rule-based        │
+    └──────────┬────────────────────────────────────┘
                │  Observation (JSON result string)
                ▼
     Next iteration  ──► Final answer when no tool called
@@ -52,14 +51,14 @@ The LLM decides which tool to call and with what arguments based on the spec.
 {
     "name": "analyze_text",
     "description": (
-        "Analyse un texte court pour détecter l'émotion. "
-        "Utilise BERT fine-tuné sur dair-ai/emotion. "
-        "Appelle cet outil quand l'utilisateur fournit du texte sans image."
+        "Analyse a short text to detect the expressed emotion. "
+        "Uses a BERT model fine-tuned on the dair-ai/emotion dataset. "
+        "Call this tool when the user provides text but no image."
     ),
     "parameters": {
         "type": "object",
         "properties": {
-            "text": {"type": "string", "description": "Texte à analyser"}
+            "text": {"type": "string", "description": "The text to analyse"}
         },
         "required": ["text"]
     }
@@ -68,15 +67,21 @@ The LLM decides which tool to call and with what arguments based on the spec.
 
 Calls: `POST /predict/text` → BERT classifier
 
+---
+
 ### analyze_image
 
 ```python
 {
     "name": "analyze_image",
-    "description": "... Appelle cet outil quand l'utilisateur fournit une image.",
+    "description": (
+        "Analyse a face image to detect the expressed emotion. "
+        "Uses ResNet-50 fine-tuned on FER2013. "
+        "Call this tool when the user provides an image but no text."
+    ),
     "parameters": {
         "properties": {
-            "image_path": {"type": "string", "description": "Chemin local vers l'image"}
+            "image_path": {"type": "string", "description": "Local path to the image file"}
         },
         "required": ["image_path"]
     }
@@ -85,12 +90,18 @@ Calls: `POST /predict/text` → BERT classifier
 
 Calls: `POST /predict/image` → ResNet-50 classifier
 
+---
+
 ### analyze_multimodal
 
 ```python
 {
     "name": "analyze_multimodal",
-    "description": "... C'est l'outil le plus précis (~83% accuracy).",
+    "description": (
+        "Analyse both a face image and text together for the most accurate emotion detection. "
+        "Uses the Attention Fusion model (~83% accuracy). "
+        "Call this tool when the user provides BOTH an image and text."
+    ),
     "parameters": {
         "properties": {
             "image_path": {"type": "string"},
@@ -103,12 +114,17 @@ Calls: `POST /predict/image` → ResNet-50 classifier
 
 Calls: `POST /predict/multimodal` → Attention Fusion model
 
+---
+
 ### generate_report
 
 ```python
 {
     "name": "generate_report",
-    "description": "Génère un rapport psychologique. Appelle APRÈS détection.",
+    "description": (
+        "Generate a psychological well-being report. "
+        "Always call this AFTER an emotion detection step."
+    ),
     "parameters": {
         "properties": {
             "emotion":   {"type": "string", "enum": EMOTION_CLASSES},
@@ -120,26 +136,26 @@ Calls: `POST /predict/multimodal` → Attention Fusion model
 }
 ```
 
-Returns a local rule-based report (no API call needed).
+Returns a local rule-based report — no external API call needed.
 
 ---
 
 ## Agent Decision Logic
 
-The system prompt encodes routing rules the LLM follows:
+The system prompt encodes the routing rules the LLM follows:
 
 | Available inputs    | Tool selected          | Model behind it    |
 |---------------------|------------------------|--------------------|
 | Text only           | `analyze_text`         | BERT               |
 | Image only          | `analyze_image`        | ResNet-50          |
 | Text + Image        | `analyze_multimodal`   | Attention Fusion   |
-| After any detection | `generate_report`      | Rule-based         |
+| After any detection | `generate_report`      | Rule-based (local) |
 
-The system prompt also adds an explicit guard for the no-image case:
+The system prompt also includes an explicit guard for the no-image case:
 
 ```
-[IMPORTANT : Aucune image fournie. Tu DOIS appeler uniquement analyze_text —
-NE PAS appeler analyze_image ni analyze_multimodal.]
+[IMPORTANT: No image provided. You MUST call only analyze_text —
+do NOT call analyze_image or analyze_multimodal.]
 ```
 
 This prevents the LLM from hallucinating an image path.
@@ -164,11 +180,14 @@ def run_agent(user_message: str, image_path: str = None) -> str:
         )
 
         msg = response.message
-        messages.append({"role": "assistant", "content": msg.content or "",
-                         "tool_calls": msg.tool_calls or []})
+        messages.append({
+            "role": "assistant",
+            "content": msg.content or "",
+            "tool_calls": msg.tool_calls or []
+        })
 
         if not msg.tool_calls:
-            return msg.content          # ← final answer, no more tool calls
+            return msg.content          # final answer — no more tool calls
 
         for tc in msg.tool_calls:
             result_str = dispatch_tool(tc.function.name, tc.function.arguments)
@@ -197,17 +216,17 @@ def dispatch_tool(tool_name: str, tool_input: dict) -> str:
             user_text=tool_input.get("user_text", ""),
         )
 
-    # Side effect: update last_result for visualization
+    # Side effect: update last_result for Streamlit visualization
     if "scores" in result and "emotion" in result:
         st.session_state.last_result = result
 
     return json.dumps(result, ensure_ascii=False)
 ```
 
-### Argument Normalization
+### Argument Normalisation
 
-Ollama may return tool arguments as a `dict`, a JSON string, or a custom
-object. The dispatcher normalizes all forms:
+Ollama may return tool arguments as a `dict`, a JSON string, or a custom object.
+The dispatcher normalises all three forms:
 
 ```python
 raw_args = tc.function.arguments
@@ -245,25 +264,25 @@ ollama serve
 
 ## Configurable Parameters
 
-| Parameter        | Default       | Range     | Effect                                      |
-|------------------|---------------|-----------|---------------------------------------------|
-| `model`          | `llama3.2`    | Any Ollama| LLM used for reasoning                      |
-| `temperature`    | `0.3`         | 0.0 – 1.0 | Lower = more deterministic tool selection   |
-| `max_iterations` | `6`           | 2 – 12    | Max tool calls before forcing a stop        |
-| `system_prompt`  | French, multi-rule | Editable | Controls routing and response language |
+| Parameter        | Default       | Range      | Effect                                      |
+|------------------|---------------|------------|---------------------------------------------|
+| `model`          | `llama3.2`    | Any Ollama | LLM used for reasoning                      |
+| `temperature`    | `0.3`         | 0.0 – 1.0  | Lower = more deterministic tool selection   |
+| `max_iterations` | `6`           | 2 – 12     | Max tool calls before forcing a stop        |
+| `system_prompt`  | Editable in UI| —          | Controls routing and response behaviour     |
 
 ---
 
 ## Error Handling
 
-| Error condition          | Agent behavior                                      |
-|--------------------------|-----------------------------------------------------|
-| Model not found          | Returns `❌ Model '...' not found. Run ollama pull` |
-| Ollama unreachable       | Returns `❌ Cannot reach Ollama at <host>`           |
-| FastAPI unreachable      | Tool returns `{"error": "Cannot reach FastAPI..."}`; agent explains to user |
-| Image path missing       | Tool returns `{"error": "Image not found"}`         |
-| Max iterations reached   | Returns `⚠️ Max iterations reached`                |
-| Tool returns `None`      | Dispatcher replaces with `{"error": "Tool returned None"}` |
+| Error condition          | Agent behaviour                                                             |
+|--------------------------|-----------------------------------------------------------------------------|
+| Model not found          | Returns `Model '...' not found. Run: ollama pull <name>`                    |
+| Ollama unreachable       | Returns `Cannot reach Ollama at <host>`                                     | 
+| FastAPI unreachable      | Tool returns `{"error": "Cannot reach FastAPI..."}` — agent explains to user|
+| Image path missing       | Tool returns `{"error": "Image not found"}`                                 |
+| Max iterations reached   | Returns ` Max iterations reached`                                           |
+| Tool returns `None`      | Dispatcher replaces with `{"error": "Tool returned None"}`                  |
 
 ---
 
@@ -276,11 +295,11 @@ TOOLS.append({
     "type": "function",
     "function": {
         "name": "analyze_audio",
-        "description": "Analyse la prosodie vocale pour détecter l'émotion.",
+        "description": "Analyse vocal prosody to detect emotion from an audio file.",
         "parameters": {
             "type": "object",
             "properties": {
-                "audio_path": {"type": "string"}
+                "audio_path": {"type": "string", "description": "Local path to the audio file"}
             },
             "required": ["audio_path"]
         }
@@ -288,7 +307,7 @@ TOOLS.append({
 })
 ```
 
-### Step 2 — Implement the handler in dispatch_tool
+### Step 2 — Add the handler in dispatch_tool
 
 ```python
 elif tool_name == "analyze_audio":
@@ -306,10 +325,10 @@ def tool_analyze_audio(audio_path: str) -> dict:
 ### Step 4 — Update the system prompt
 
 ```
-- Si l'utilisateur fournit un fichier audio → utilise analyze_audio
+- If the user provides an audio file → call analyze_audio
 ```
 
 ---
 
-Last Updated: 23/05/026<br>
+Last Updated: 23/05/2026<br>
 Status: Active ✓

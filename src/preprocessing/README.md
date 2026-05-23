@@ -280,18 +280,6 @@ loaders = get_text_dataloaders(
 
 ---
 
-## Bug Fixes Applied
-
-Three non-obvious bugs were corrected in `text_preprocessing.py`:
-
-| # | Bug                                               | Impact                                    | Fix                                         |
-|---|---------------------------------------------------|-------------------------------------------|---------------------------------------------|
-| 1 | `HF_TO_FER_LABEL_MAP` defined inside a function   | Not shared between functions → label mismatch | Moved to module-level constant             |
-| 2 | `BERTEmotionDataset` defined twice (conflicting signatures) | Second definition silently overrode first → all labels defaulted to 0 | Merged into one canonical class    |
-| 3 | `get_bert_dataloaders` passed tokenizer as `label_map` positional arg | Label lookup always failed → model predicted only class 0 | Switched to `tokenizer_or_name=` keyword |
-
----
-
 ## Emotion Label Index Map
 
 ```
