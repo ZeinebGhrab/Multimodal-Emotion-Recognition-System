@@ -447,7 +447,7 @@ All three strategies are in `src/fusion/fusion_models.py` and share the same int
 
 ```
 img_feats (B, 2048)  → Linear(2048 → 512) → ReLU → LayerNorm ─┐
-                                                               ├── cat → MLP → logits
+                                                              ├── cat → MLP → logits
 txt_feats (B, 768)   → Linear(768 → 512)  → ReLU → LayerNorm ─┘
 ```
 
@@ -457,7 +457,7 @@ Both modalities contribute equally — no explicit mechanism for one to query th
 
 ```
 CNN  → img_head → P_img (B, 7) ─┐
-                                 ├── MLP(14 → 64 → 7) → logits
+                                ├── MLP(14 → 64 → 7) → logits
 BERT → txt_head → P_txt (B, 7) ─┘
 ```
 
@@ -595,7 +595,7 @@ All models use `CrossEntropyLoss(label_smoothing=0.1)` to prevent overconfidence
 ```
     User input
          │
-    ┌────▼─────────────────┐
+    ┌────▼──────────────────┐
     │  Ollama LLM           │  ◄── System prompt + routing rules
     │  (llama3.2 etc.)      │
     └────┬──────────────────┘
