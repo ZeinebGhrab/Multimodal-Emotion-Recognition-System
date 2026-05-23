@@ -19,14 +19,14 @@ User input (text? image? both?)
     │  (llama3.2 etc.)       │
     └─────────┬──────────────┘
               │  tool_calls in response?
-    ┌─────────▼──────────────────────────────────┐
+    ┌─────────▼───────────────────────────────────┐
     │  Tool Dispatcher (dispatch_tool)            │
     │                                             │
     │  analyze_text       → FastAPI /predict/text │
     │  analyze_image      → FastAPI /predict/image│
     │  analyze_multimodal → FastAPI /predict/mm   │
     │  generate_report    → local rule-based      │
-    └─────────┬──────────────────────────────────┘
+    └─────────┬───────────────────────────────────┘
               │  JSON observation string
               ▼
     Next iteration  ──► Final answer when no tool called
