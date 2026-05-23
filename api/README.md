@@ -178,7 +178,7 @@ def preprocess_text(text: str):
 | `FUSION_CHECKPOINT` | `outputs/checkpoints/best_fusion.pt` | Fusion weights path |
 | `FUSION_TYPE` | `attention` | Fusion strategy (`early`/`late`/`attention`) |
 | `BERT_MODEL` | `bert-base-uncased` | HuggingFace model identifier |
-| `ANTHROPIC_API_KEY` | — | Enables LLM reports |
+| `OLLAMA_HOST` | `http://localhost:11434` | Ollama server for LLM reports |
 
 ```bash
 # Run with custom checkpoint paths

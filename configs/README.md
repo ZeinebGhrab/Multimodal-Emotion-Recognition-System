@@ -244,13 +244,13 @@ training:
 
 ```yaml
 genai:
-  provider: "anthropic"
-  model: "claude-sonnet-4-20250514"
+  provider: "ollama"
+  model: "llama3.2"
   max_tokens: 600
   temperature: 0.7
 ```
 
-Read by `src/genai/report_generator.py`. Set `temperature: 0.0` for deterministic, reproducible reports in testing.
+Read by `src/genai/report_generator.py`. Set `temperature: 0.0` for deterministic, reproducible reports in testing. The model must be available locally via `ollama pull llama3.2`.
 
 ---
 

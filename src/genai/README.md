@@ -2,7 +2,7 @@
 
 Produces a structured, human-readable psychological report from the model's prediction. Supports two generation modes:
 
-- **LLM mode** — calls the Claude API for rich, empathetic, clinically-informed reports
+- **LLM mode** — calls Ollama (llama3.2) for rich, empathetic, clinically-informed reports
 - **Rule-based mode** — generates reports from predefined psychological profiles (fast, offline, deterministic)
 
 ```
@@ -17,7 +17,7 @@ src/genai/
 
 | Mode | Trigger | Output style |
 |------|---------|-------------|
-| **LLM** | `ANTHROPIC_API_KEY` is set | Rich, empathetic, personalised, JSON |
+| **LLM** | Ollama server running | Rich, empathetic, personalised, JSON |
 | **Rule-based** | No API key present | Template-based, fast, offline |
 
 Both modes produce the same JSON schema.
@@ -45,7 +45,7 @@ Both modes produce the same JSON schema.
     "Gentle activity (walking, journaling) can help shift mood"
   ],
   "wellbeing_tip": "...",
-  "source": "claude:claude-sonnet-4-20250514"
+  "source": "ollama:llama3.2"
 }
 ```
 
@@ -58,7 +58,7 @@ Both modes produce the same JSON schema.
 ### From the command line
 
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-...
+# No API key needed — Ollama must be running
 
 python src/genai/report_generator.py \
   --emotion happy \
@@ -116,7 +116,7 @@ EMOTION_PROFILES = {
 }
 ```
 
-The fallback is triggered automatically when `ANTHROPIC_API_KEY` is not set, so the system always produces a report regardless of API availability.
+The fallback is triggered automatically when the Ollama server is unreachable, so the system always produces a report regardless of API availability.
 
 ---
 
@@ -124,8 +124,8 @@ The fallback is triggered automatically when `ANTHROPIC_API_KEY` is not set, so 
 
 ```yaml
 genai:
-  provider: "anthropic"
-  model: "claude-sonnet-4-20250514"
+  provider: "ollama"
+  model: "llama3.2"
   max_tokens: 600
   temperature: 0.7
 ```
@@ -138,8 +138,9 @@ Set `temperature: 0.0` for deterministic, reproducible reports in testing.
 
 | Variable | Effect |
 |----------|--------|
-| `ANTHROPIC_API_KEY` | If set → LLM mode. If absent → rule-based mode. |
+| `OLLAMA_HOST` | If Ollama is reachable → LLM mode. Otherwise → rule-based mode. |
 
 ---
 
 *Last Updated: 23/05/2026 — Status: Active ✓*
+

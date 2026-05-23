@@ -3,7 +3,7 @@
 > **Deep Learning · Generative AI · ReAct Agent**  
 > Academic Project — ENET'Com Sfax
 
-Detect human emotions from facial images and text, fuse both modalities through three fusion strategies, orchestrate inference through an autonomous Ollama ReAct agent, and generate AI-powered psychological reports via the Claude API.
+Detect human emotions from facial images and text, fuse both modalities through three fusion strategies, orchestrate inference through an autonomous Ollama ReAct agent, and generate AI-powered psychological reports via Ollama (llama3.2).
 
 ---
 
@@ -211,8 +211,9 @@ python scripts/compare_models.py
 ### Step 7 — Generate a GenAI report (optional)
 
 ```bash
-export ANTHROPIC_API_KEY=sk-ant-...
+# No API key needed — Ollama handles generation
 
+# Ollama must be running (step 2)
 python src/genai/report_generator.py \
   --emotion happy \
   --text "I feel great today!"
@@ -558,7 +559,7 @@ All models use `CrossEntropyLoss(label_smoothing=0.1)` to prevent overconfidence
 
 | Mode | Trigger | Output |
 |------|---------|--------|
-| **LLM** | `ANTHROPIC_API_KEY` is set | Rich, empathetic, clinically-informed |
+| **LLM** | Ollama server running | Rich, empathetic, clinically-informed |
 | **Rule-based** | No API key | Template-based, fast, offline |
 
 **Report schema (JSON):**
@@ -578,7 +579,7 @@ All models use `CrossEntropyLoss(label_smoothing=0.1)` to prevent overconfidence
   "physical_signals": "...",
   "recommendations": ["...", "...", "..."],
   "wellbeing_tip": "...",
-  "source": "claude:claude-sonnet-4-20250514"
+  "source": "ollama:llama3.2"
 }
 ```
 
@@ -785,7 +786,7 @@ agent:
   max_iterations: 6
 
 genai:
-  model: "claude-sonnet-4-20250514"
+  model: "llama3.2"
   max_tokens: 600
   temperature: 0.7
 ```
@@ -796,7 +797,7 @@ genai:
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
-| `ANTHROPIC_API_KEY` | For GenAI | — | Claude API key for emotion reports |
+| `OLLAMA_HOST` | For GenAI | `http://localhost:11434` | Ollama server URL for report generation |
 | `CNN_CHECKPOINT` | For API | `outputs/checkpoints/best_cnn.pt` | CNN weights path |
 | `BERT_CHECKPOINT` | For API | `outputs/checkpoints/best_bert.pt` | BERT weights path |
 | `FUSION_CHECKPOINT` | For API | `outputs/checkpoints/best_fusion.pt` | Fusion weights path |
@@ -817,7 +818,7 @@ genai:
 | Data | Pandas, NumPy, scikit-learn, HuggingFace Datasets |
 | Visualisation | Matplotlib, Seaborn, Plotly |
 | ReAct Agent | Ollama Python SDK |
-| GenAI Reports | Anthropic Claude API (`anthropic >= 0.23.0`) |
+| GenAI Reports | Ollama Python SDK (llama3.2) |
 | API | FastAPI + Uvicorn |
 | UI | Streamlit |
 | Config | PyYAML |
