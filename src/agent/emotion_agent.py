@@ -1,14 +1,14 @@
 """
 streamlit_emotion_app.py
 ─────────────────────────
-Interface Streamlit pour l'agent AI de reconnaissance d'émotions multimodal.
+Streamlit interface for the multimodal emotion recognition AI agent.
 
-Fonctionnalités :
-  1. Analyse de texte, image, ou combiné (multimodal)
-  2. Visualisation du raisonnement de l'agent (ReAct loop)
-  3. Panneau d'amélioration de l'agent (system prompt, modèle, paramètres)
-  4. Historique des sessions
-  5. Visualisation radar des scores d'émotions
+Features:
+  1. Text, image, or combined (multimodal) analysis
+  2. Visualization of the agent’s reasoning (ReAct loop)
+  3. Agent improvement panel (system prompt, model, parameters)
+  4. Session history
+  5. Radar visualization of emotion scores
 
 Usage :
     streamlit run streamlit_emotion_app.py
@@ -16,11 +16,8 @@ Usage :
     # uvicorn api.app:app --port 8000
 """
 
-import os
-import sys
 import json
 import time
-import base64
 import tempfile
 import requests
 import ollama as ollama_lib

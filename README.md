@@ -992,4 +992,4 @@ Per-class F1 scores:
 
 **Zeineb Ghrab**
 <br>Data & Decisional Systems Engineering Student — ENET'Com Sfax
-<br>*GenAI · LLMs · LangChain · Deep Learning · Web Development*
+<br>*GenAI · LLMs · Deep Learning · Web Development*

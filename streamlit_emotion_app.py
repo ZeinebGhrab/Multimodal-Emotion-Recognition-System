@@ -16,7 +16,7 @@ Usage:
     # Prerequisites: uvicorn api.app:app --port 8000 + ollama serve
 """
 
-import os, sys, json, time, tempfile, requests
+import json, time, tempfile, requests
 import ollama as ollama_lib
 from pathlib import Path
 from datetime import datetime
