@@ -43,7 +43,7 @@ st.set_page_config(
 st.markdown("""
 <style>
 /* Import Fonts */
-@import url('https://fonts.googleapis.com/css2?family=Syne:wght@400;600;700;800&family=DM+Sans:wght@300;400;500&display=swap');
+@import url('https://fonts.googleapis.com/css2?family=Instrument+Serif:ital@0;1&family=DM+Sans:wght@300;400;500;600&family=DM+Mono:wght@400;500&display=swap');
 
 /* Global */
 html, body, [class*="css"] {
@@ -57,169 +57,196 @@ header {visibility: hidden;}
 
 /* App background */
 .stApp {
-    background: #0a0a0f;
-    color: #e8e8f0;
+    background: #F7F5F2;
+    color: #1C1917;
 }
 
 /* Sidebar */
 section[data-testid="stSidebar"] {
-    background: #111118;
-    border-right: 1px solid #1e1e2e;
+    background: #FFFFFF;
+    border-right: 1px solid #E8E3DC;
+    box-shadow: 2px 0 12px rgba(0,0,0,0.04);
+}
+section[data-testid="stSidebar"] * {
+    color: #1C1917 !important;
+}
+section[data-testid="stSidebar"] label {
+    color: #78716C !important;
 }
 
 /* Title Banner */
 .hero-title {
-    font-family: 'Syne', sans-serif;
-    font-size: 2.6rem;
-    font-weight: 800;
-    background: linear-gradient(135deg, #7c6af7 0%, #a855f7 40%, #ec4899 100%);
-    -webkit-background-clip: text;
-    -webkit-text-fill-color: transparent;
-    background-clip: text;
-    letter-spacing: -0.03em;
+    font-family: 'Instrument Serif', serif;
+    font-size: 2.2rem;
+    font-weight: 400;
+    color: #1C1917;
+    letter-spacing: -0.02em;
     line-height: 1.1;
     margin-bottom: 0.2rem;
 }
 
 .hero-sub {
     font-family: 'DM Sans', sans-serif;
-    font-size: 0.95rem;
-    color: #6b6b8a;
-    letter-spacing: 0.05em;
+    font-size: 0.72rem;
+    color: #A8A29E;
+    letter-spacing: 0.12em;
     text-transform: uppercase;
+    font-weight: 600;
     margin-bottom: 2rem;
 }
 
 /* Cards */
 .card {
-    background: #13131f;
-    border: 1px solid #1e1e30;
+    background: #FFFFFF;
+    border: 1px solid #E8E3DC;
     border-radius: 16px;
     padding: 1.5rem;
     margin-bottom: 1rem;
+    box-shadow: 0 1px 6px rgba(0,0,0,0.04);
 }
 
 .card-accent {
-    border-left: 3px solid #7c6af7;
+    border-left: 3px solid #7C6AF7;
 }
 
 /* Emotion badge */
 .emotion-badge {
     display: inline-block;
-    padding: 0.35rem 1rem;
+    padding: 0.4rem 1.2rem;
     border-radius: 100px;
-    font-family: 'Syne', sans-serif;
+    font-family: 'DM Sans', sans-serif;
     font-weight: 700;
-    font-size: 1.1rem;
-    letter-spacing: 0.02em;
+    font-size: 1rem;
+    letter-spacing: 0.04em;
 }
 
 /* Agent step */
 .agent-step {
-    background: #0f0f1a;
-    border: 1px solid #1e1e30;
+    background: #FAFAF9;
+    border: 1px solid #E8E3DC;
     border-radius: 12px;
     padding: 0.9rem 1.2rem;
     margin: 0.4rem 0;
-    font-size: 0.88rem;
+    font-size: 0.85rem;
     font-family: 'DM Mono', monospace;
+    color: #44403C;
 }
 
-.step-thinking { border-left: 3px solid #7c6af7; }
-.step-tool     { border-left: 3px solid #f59e0b; }
-.step-result   { border-left: 3px solid #10b981; }
-.step-final    { border-left: 3px solid #ec4899; }
+.step-thinking { border-left: 3px solid #8B7CF6; }
+.step-tool     { border-left: 3px solid #F59E0B; }
+.step-result   { border-left: 3px solid #10B981; }
+.step-final    { border-left: 3px solid #EC4899; }
 
 /* Metric cards */
 .metric-card {
-    background: #13131f;
-    border: 1px solid #1e1e30;
+    background: #FFFFFF;
+    border: 1px solid #E8E3DC;
     border-radius: 12px;
     padding: 1rem;
     text-align: center;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.04);
 }
 
 .metric-value {
-    font-family: 'Syne', sans-serif;
+    font-family: 'Instrument Serif', serif;
     font-size: 2rem;
-    font-weight: 700;
-    color: #7c6af7;
+    font-weight: 400;
+    color: #7C6AF7;
 }
 
 .metric-label {
-    font-size: 0.78rem;
-    color: #6b6b8a;
+    font-size: 0.72rem;
+    color: #A8A29E;
     text-transform: uppercase;
-    letter-spacing: 0.08em;
+    letter-spacing: 0.1em;
+    font-weight: 600;
 }
 
 /* Buttons */
 .stButton > button {
-    background: linear-gradient(135deg, #7c6af7, #a855f7);
-    color: white;
-    border: none;
-    border-radius: 10px;
-    font-family: 'Syne', sans-serif;
-    font-weight: 600;
-    letter-spacing: 0.02em;
-    padding: 0.65rem 1.5rem;
-    width: 100%;
-    transition: opacity 0.2s;
+    background: linear-gradient(135deg, #7C6AF7 0%, #9B8BFA 100%) !important;
+    color: #FFFFFF !important;
+    border: none !important;
+    border-radius: 10px !important;
+    font-family: 'DM Sans', sans-serif !important;
+    font-weight: 600 !important;
+    letter-spacing: 0.01em !important;
+    padding: 0.65rem 1.5rem !important;
+    width: 100% !important;
+    transition: all 0.2s ease !important;
+    box-shadow: 0 2px 10px rgba(124,106,247,0.25) !important;
 }
 
 .stButton > button:hover {
-    opacity: 0.85;
+    background: linear-gradient(135deg, #6B59E8 0%, #8B7BEA 100%) !important;
+    transform: translateY(-1px) !important;
+    box-shadow: 0 4px 16px rgba(124,106,247,0.35) !important;
+}
+
+.stButton > button:active {
+    transform: translateY(0px) !important;
 }
 
 /* Input styling */
 .stTextArea textarea, .stTextInput input {
-    background: #0f0f1a !important;
-    border: 1px solid #1e1e30 !important;
+    background: #FAFAF9 !important;
+    border: 1.5px solid #E8E3DC !important;
     border-radius: 10px !important;
-    color: #e8e8f0 !important;
+    color: #1C1917 !important;
     font-family: 'DM Sans', sans-serif !important;
+    font-size: 0.92rem !important;
+    transition: border-color 0.15s !important;
+}
+.stTextArea textarea:focus, .stTextInput input:focus {
+    border-color: #7C6AF7 !important;
+    background: #FFFFFF !important;
+    box-shadow: 0 0 0 3px rgba(124,106,247,0.08) !important;
 }
 
 /* Tabs */
 .stTabs [data-baseweb="tab-list"] {
-    background: #111118;
-    border-radius: 10px;
+    background: #FFFFFF;
+    border: 1px solid #E8E3DC;
+    border-radius: 12px;
     padding: 4px;
-    gap: 4px;
+    gap: 2px;
 }
 
 .stTabs [data-baseweb="tab"] {
     background: transparent;
-    color: #6b6b8a;
-    border-radius: 8px;
+    color: #78716C;
+    border-radius: 9px;
     font-family: 'DM Sans', sans-serif;
-    font-weight: 500;
+    font-weight: 600;
+    font-size: 0.86rem;
     padding: 0.5rem 1.2rem;
+    transition: all 0.15s;
 }
 
 .stTabs [aria-selected="true"] {
-    background: #1e1e30 !important;
-    color: #e8e8f0 !important;
+    background: #1C1917 !important;
+    color: #FFFFFF !important;
+    box-shadow: 0 2px 8px rgba(28,25,23,0.15);
 }
 
 /* Divider */
 .emotion-divider {
     border: none;
-    border-top: 1px solid #1e1e30;
+    border-top: 1px solid #E8E3DC;
     margin: 1.5rem 0;
 }
 
 /* History item */
 .history-item {
-    background: #111118;
-    border: 1px solid #1e1e30;
+    background: #FAFAF9;
+    border: 1px solid #E8E3DC;
     border-radius: 10px;
     padding: 0.8rem 1rem;
     margin-bottom: 0.5rem;
     cursor: pointer;
-    transition: border-color 0.2s;
+    transition: all 0.2s;
 }
-.history-item:hover { border-color: #7c6af7; }
+.history-item:hover { border-color: #7C6AF7; background: #F5F3FF; }
 
 /* Scrollable container */
 .scroll-box {
@@ -230,19 +257,101 @@ section[data-testid="stSidebar"] {
 
 /* Selectbox */
 .stSelectbox > div > div {
-    background: #0f0f1a !important;
-    border: 1px solid #1e1e30 !important;
-    color: #e8e8f0 !important;
+    background: #FAFAF9 !important;
+    border: 1.5px solid #E8E3DC !important;
+    border-radius: 10px !important;
+    color: #1C1917 !important;
 }
 
 /* Slider */
-.stSlider > div { color: #e8e8f0; }
+.stSlider > div { color: #1C1917; }
+.stSlider [data-baseweb="slider"] [role="slider"] {
+    background: #7C6AF7 !important;
+}
 
 /* Info / warning boxes */
 .stAlert {
-    background: #13131f !important;
-    border: 1px solid #1e1e30 !important;
+    background: #FAFAF9 !important;
+    border: 1px solid #E8E3DC !important;
+    border-radius: 12px !important;
+    color: #1C1917 !important;
+}
+
+/* Expanders */
+.streamlit-expanderHeader {
+    background: #FAFAF9 !important;
+    border: 1px solid #E8E3DC !important;
     border-radius: 10px !important;
+    font-weight: 600 !important;
+    color: #1C1917 !important;
+}
+.streamlit-expanderContent {
+    background: #FFFFFF !important;
+    border: 1px solid #E8E3DC !important;
+    border-top: none !important;
+    border-radius: 0 0 10px 10px !important;
+}
+
+/* Code blocks */
+code, pre {
+    background: #F7F5F2 !important;
+    color: #7C6AF7 !important;
+    border: 1px solid #E8E3DC !important;
+    border-radius: 8px !important;
+    font-family: 'DM Mono', monospace !important;
+}
+
+/* Progress bars */
+.stProgress > div > div > div {
+    background: linear-gradient(90deg, #7C6AF7, #A78BFA) !important;
+    border-radius: 100px !important;
+}
+
+/* Metrics */
+[data-testid="metric-container"] {
+    background: #FFFFFF;
+    border: 1px solid #E8E3DC;
+    border-radius: 14px;
+    padding: 1rem 1.2rem;
+    box-shadow: 0 1px 4px rgba(0,0,0,0.04);
+}
+[data-testid="metric-container"] [data-testid="stMetricValue"] {
+    color: #7C6AF7 !important;
+    font-weight: 700 !important;
+}
+[data-testid="metric-container"] [data-testid="stMetricLabel"] {
+    color: #A8A29E !important;
+    font-size: 0.72rem !important;
+    text-transform: uppercase !important;
+    letter-spacing: 0.1em !important;
+}
+
+/* File uploader */
+.stFileUploader {
+    background: #FAFAF9 !important;
+    border: 1.5px dashed #D4C5F9 !important;
+    border-radius: 12px !important;
+}
+
+/* Dividers */
+hr { border-color: #E8E3DC !important; }
+
+/* Spinner */
+.stSpinner > div { border-top-color: #7C6AF7 !important; }
+
+/* Scrollbar */
+::-webkit-scrollbar { width: 5px; height: 5px; }
+::-webkit-scrollbar-track { background: #F7F5F2; }
+::-webkit-scrollbar-thumb { background: #D4C5F9; border-radius: 3px; }
+::-webkit-scrollbar-thumb:hover { background: #7C6AF7; }
+
+/* Captions */
+.stCaption, small { color: #A8A29E !important; }
+
+/* Image preview */
+.stImage img {
+    border-radius: 12px !important;
+    border: 1px solid #E8E3DC !important;
 }
 </style>
 """, unsafe_allow_html=True)
@@ -734,7 +843,6 @@ def render_radar_chart(scores: dict) -> go.Figure:
     values = list(scores.values())
     values_pct = [v * 100 for v in values]
 
-    colors = [EMOTION_META[e]["color"] for e in emotions]
     dominant = max(scores, key=scores.get)
     dominant_color = EMOTION_META[dominant]["color"]
 
@@ -743,8 +851,8 @@ def render_radar_chart(scores: dict) -> go.Figure:
         r=values_pct + [values_pct[0]],
         theta=emotions + [emotions[0]],
         fill='toself',
-        fillcolor=f"rgba{tuple(int(dominant_color.lstrip('#')[i:i+2], 16) for i in (0, 2, 4)) + (0.15,)}",
-        line=dict(color=dominant_color, width=2),
+        fillcolor=f"rgba{tuple(int(dominant_color.lstrip('#')[i:i+2], 16) for i in (0, 2, 4)) + (0.12,)}",
+        line=dict(color=dominant_color, width=2.5),
         name="Scores",
         hovertemplate="%{theta}: %{r:.1f}%<extra></extra>"
     ))
@@ -753,16 +861,16 @@ def render_radar_chart(scores: dict) -> go.Figure:
         polar=dict(
             bgcolor="rgba(0,0,0,0)",
             angularaxis=dict(
-                tickfont=dict(size=11, color="#94a3b8", family="DM Sans"),
-                linecolor="#1e1e30",
-                gridcolor="#1e1e30",
+                tickfont=dict(size=11, color="#78716C", family="DM Sans"),
+                linecolor="#E8E3DC",
+                gridcolor="#E8E3DC",
             ),
             radialaxis=dict(
                 visible=True,
                 range=[0, 100],
-                tickfont=dict(size=9, color="#6b6b8a"),
-                gridcolor="#1e1e30",
-                linecolor="#1e1e30",
+                tickfont=dict(size=9, color="#A8A29E"),
+                gridcolor="#E8E3DC",
+                linecolor="#E8E3DC",
             ),
         ),
         paper_bgcolor="rgba(0,0,0,0)",
@@ -779,7 +887,6 @@ def render_bar_chart(scores: dict) -> go.Figure:
     emotions = [e for e, _ in sorted_items]
     values = [v * 100 for _, v in sorted_items]
     colors = [EMOTION_META[e]["color"] for e in emotions]
-    emojis = [EMOTION_META[e]["emoji"] for e in emotions]
     labels = [f"{EMOTION_META[e]['emoji']} {EMOTION_META[e]['label']}" for e in emotions]
 
     fig = go.Figure(go.Bar(
@@ -788,12 +895,12 @@ def render_bar_chart(scores: dict) -> go.Figure:
         orientation='h',
         marker=dict(
             color=colors,
-            opacity=[1.0 if i == 0 else 0.45 for i in range(len(emotions))],
+            opacity=[1.0 if i == 0 else 0.3 for i in range(len(emotions))],
             line=dict(width=0),
         ),
         text=[f"{v:.1f}%" for v in values],
         textposition="outside",
-        textfont=dict(size=11, color="#94a3b8", family="DM Sans"),
+        textfont=dict(size=11, color="#78716C", family="DM Sans"),
         hovertemplate="%{y}: %{x:.1f}%<extra></extra>",
     ))
 
@@ -803,12 +910,12 @@ def render_bar_chart(scores: dict) -> go.Figure:
         xaxis=dict(
             range=[0, 115],
             showgrid=True,
-            gridcolor="#1e1e30",
-            tickfont=dict(color="#6b6b8a", size=10),
+            gridcolor="#EEE9E2",
+            tickfont=dict(color="#A8A29E", size=10),
             zeroline=False,
         ),
         yaxis=dict(
-            tickfont=dict(color="#e8e8f0", size=11, family="DM Sans"),
+            tickfont=dict(color="#1C1917", size=11, family="DM Sans"),
             categoryorder="total ascending",
         ),
         margin=dict(t=10, b=10, l=10, r=60),
@@ -832,7 +939,7 @@ def check_api_health():
 
 with st.sidebar:
     st.markdown('<div class="hero-title">🧠 EmotionSense</div>', unsafe_allow_html=True)
-    st.markdown('<div class="hero-sub">Agent Ollama · Multimodal</div>', unsafe_allow_html=True)
+    st.markdown('<div class="hero-sub">Agent Ollama &nbsp;·&nbsp; Multimodal</div>', unsafe_allow_html=True)
 
     # Ollama host
     st.markdown("#### 🦙 Serveur Ollama")
@@ -926,7 +1033,7 @@ with st.sidebar:
             modality = session.get("modality", "?")
             st.markdown(
                 f'<div class="history-item"><b>{emoji} {label}</b><br>'
-                f'<span style="color:#6b6b8a;font-size:0.78rem;">{ts} · {modality}</span></div>',
+                f'<span style="color:#A8A29E;font-size:0.78rem;">{ts} · {modality}</span></div>',
                 unsafe_allow_html=True
             )
 
@@ -1065,7 +1172,7 @@ with tab_analyse:
             st.markdown("### 💬 Réponse détaillée")
             st.markdown(last.get("response", ""))
             st.markdown(
-                f'<div style="color:#6b6b8a;font-size:0.8rem;margin-top:0.5rem;">'
+                f'<div style="color:#A8A29E;font-size:0.8rem;margin-top:0.5rem;">'
                 f'⏱ {last.get("elapsed","?")}s · 🧠 {last.get("modality","?")} · {last.get("timestamp","")}</div>',
                 unsafe_allow_html=True
             )
@@ -1082,7 +1189,7 @@ with tab_agent:
 
     if not st.session_state.agent_steps:
         st.markdown(
-            '<div style="text-align:center;color:#6b6b8a;padding:3rem;">'
+            '<div style="text-align:center;color:#A8A29E;padding:3rem;">'
             '⚡ Lancez une analyse dans l\'onglet "Analyse" pour voir le raisonnement ici.'
             '</div>',
             unsafe_allow_html=True
@@ -1102,7 +1209,7 @@ with tab_agent:
             if stype == "thinking":
                 st.markdown(
                     f'<div class="agent-step {css_class}">'
-                    f'<span style="color:#6b6b8a;font-size:0.75rem;">[{ts}] {label}</span><br>'
+                    f'<span style="color:#A8A29E;font-size:0.75rem;">[{ts}] {label}</span><br>'
                     f'{icon} {step.get("text","")}'
                     f'</div>',
                     unsafe_allow_html=True
@@ -1139,7 +1246,7 @@ with tab_agent:
             elif stype == "final":
                 st.markdown(
                     f'<div class="agent-step {css_class}">'
-                    f'<span style="color:#6b6b8a;font-size:0.75rem;">[{ts}] {label}</span><br>'
+                    f'<span style="color:#A8A29E;font-size:0.75rem;">[{ts}] {label}</span><br>'
                     f'{icon} Réponse finale générée ({len(step.get("text",""))} caractères)'
                     f'</div>',
                     unsafe_allow_html=True

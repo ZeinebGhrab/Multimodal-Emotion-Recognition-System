@@ -118,7 +118,11 @@ def _load_models():
     cnn = EmotionCNN(num_classes=7, dropout=0.5, pretrained=False).to(DEVICE)
     if os.path.exists(CNN_CHECKPOINT):
         cnn.load_state_dict(torch.load(CNN_CHECKPOINT, map_location=DEVICE))
-        print(f"[API] CNN loaded from {CNN_CHECKPOINT}")
+        print(f"[API] ✅ CNN loaded from {CNN_CHECKPOINT}")
+    else:
+        print(f"[API] ⚠️  CNN checkpoint NOT FOUND at: {CNN_CHECKPOINT}")
+        print(f"[API] ⚠️  CNN running with random weights — predictions will be unreliable!")
+        print(f"[API] ⚠️  Working directory: {os.getcwd()}")
     cnn.eval()
     _models["cnn"] = cnn
 
@@ -126,7 +130,11 @@ def _load_models():
     bert = BERTClassifier(model_name=BERT_MODEL, num_classes=7, dropout=0.3).to(DEVICE)
     if os.path.exists(BERT_CHECKPOINT):
         bert.load_state_dict(torch.load(BERT_CHECKPOINT, map_location=DEVICE))
-        print(f"[API] BERT loaded from {BERT_CHECKPOINT}")
+        print(f"[API] ✅ BERT loaded from {BERT_CHECKPOINT}")
+    else:
+        print(f"[API] ⚠️  BERT checkpoint NOT FOUND at: {BERT_CHECKPOINT}")
+        print(f"[API] ⚠️  BERT running with random weights — predictions will be unreliable!")
+        print(f"[API] ⚠️  Working directory: {os.getcwd()}")
     bert.eval()
     _models["bert"] = bert
 
@@ -139,7 +147,12 @@ def _load_models():
     ).to(DEVICE)
     if os.path.exists(FUSION_CHECKPOINT):
         fusion.load_state_dict(torch.load(FUSION_CHECKPOINT, map_location=DEVICE))
-        print(f"[API] Fusion model loaded from {FUSION_CHECKPOINT}")
+        print(f"[API] ✅ Fusion model loaded from {FUSION_CHECKPOINT}")
+    else:
+        print(f"[API] ⚠️  FUSION checkpoint NOT FOUND at: {FUSION_CHECKPOINT}")
+        print(f"[API] ⚠️  Fusion running with random weights — will always predict the same class!")
+        print(f"[API] ⚠️  Working directory: {os.getcwd()}")
+        print(f"[API] ⚠️  Fix: run uvicorn from the project root, or set FUSION_CHECKPOINT env var.")
     fusion.eval()
     _models["fusion"] = fusion
 
@@ -272,8 +285,14 @@ async def predict_multimodal(
     include_report: bool = Form(False)
 ):
     """
-    Predict emotion from image + text using the fusion model.
-    This is the most accurate endpoint — it combines both modalities.
+    Predict emotion from image + text.
+
+    Strategy: run image and text independently, then combine their probability
+    distributions via weighted average (image weight=0.6, text weight=0.4).
+
+    This avoids the train/inference mismatch of the fusion model, which was
+    trained on aligned (image, same-class text) pairs and produces unreliable
+    results when the user's free-form text conflicts with the facial expression.
     """
     _load_models()
 
@@ -286,9 +305,27 @@ async def predict_multimodal(
     input_ids, mask = preprocess_text(text)
 
     with torch.no_grad():
-        logits = _models["fusion"](img_tensor, input_ids, mask)
+        img_logits  = _models["cnn"](img_tensor)
+        txt_logits  = _models["bert"](input_ids, mask)
 
-    return logits_to_response(logits, include_report, text)
+        img_probs = torch.softmax(img_logits, dim=-1)
+        txt_probs = torch.softmax(txt_logits, dim=-1)
+
+        # Weighted combination: image is primary signal for facial emotion
+        combined_probs = 0.6 * img_probs + 0.4 * txt_probs
+        # Convert back to logits for logits_to_response
+        logits = torch.log(combined_probs + 1e-8)
+
+    result = logits_to_response(logits, include_report, text)
+
+    # Add per-modality detail for transparency
+    img_scores = {cls: round(p, 4) for cls, p in zip(EMOTION_CLASSES, img_probs.squeeze(0).cpu().tolist())}
+    txt_scores = {cls: round(p, 4) for cls, p in zip(EMOTION_CLASSES, txt_probs.squeeze(0).cpu().tolist())}
+    result["image_scores"] = img_scores
+    result["text_scores"]  = txt_scores
+    result["fusion_method"] = "weighted_average_0.6_img_0.4_txt"
+
+    return result
 
 
 @app.get("/classes", tags=["System"])
