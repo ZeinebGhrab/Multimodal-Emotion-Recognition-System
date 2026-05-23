@@ -15,8 +15,8 @@ src/agent/
 User input (text? image? both?)
               │
     ┌─────────▼──────────────┐
-    │  Ollama LLM             │  ◄── System prompt + routing rules
-    │  (llama3.2 etc.)        │
+    │  Ollama LLM            │  ◄── System prompt + routing rules
+    │  (llama3.2 etc.)       │
     └─────────┬──────────────┘
               │  tool_calls in response?
     ┌─────────▼──────────────────────────────────┐
