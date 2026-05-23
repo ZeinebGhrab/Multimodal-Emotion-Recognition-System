@@ -375,6 +375,14 @@ Input token IDs (B, T)
 </tr>
 </table>
 
+<table>
+<tr>
+<td><img src="outputs/figures/screenshots/lstm_training_terminal_1.png" width="280"/></td>
+<td><img src="outputs/figures/screenshots/lstm_training_terminal_2.png" width="280"/></td>
+<td><img src="outputs/figures/screenshots/lstm_training_terminal_3.png" width="280"/></td>
+</tr>
+</table>
+
 ### 7.2 BERT (default)
 
 ```
@@ -406,6 +414,14 @@ optimizer_groups = [
 <tr>
 <td><img src="outputs/figures/bert_20260522_165038_curves.png" width="420"/></td>
 <td><img src="outputs/figures/bert_20260522_165038_cm.png" width="380"/></td>
+</tr>
+</table>
+
+<table>
+<tr>
+<td><img src="outputs/figures/screenshots/bert_training_terminal_1.png" width="280"/></td>
+<td><img src="outputs/figures/screenshots/bert_training_terminal_2.png" width="280"/></td>
+<td><img src="outputs/figures/screenshots/bert_training_terminal_3.png" width="280"/></td>
 </tr>
 </table>
 
