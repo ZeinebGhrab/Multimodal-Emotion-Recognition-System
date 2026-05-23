@@ -1,0 +1,42 @@
+{
+  "models": [
+    {
+      "model": "Attention Fusion",
+      "run_id": "attention_20260523_002258",
+      "accuracy": 0.155,
+      "macro_f1": 0.0383426097711812,
+      "precision": 0.02214285714285714,
+      "recall": 0.14285714285714285,
+      "path": "outputs/checkpoints\\attention_20260523_002258\\test_metrics.json"
+    },
+    {
+      "model": "BERT",
+      "run_id": "bert_20260522_165038",
+      "accuracy": 0.9575,
+      "macro_f1": 0.6525587527724752,
+      "precision": 0.655458767183698,
+      "recall": 0.6500831940249211,
+      "path": "outputs/checkpoints\\bert_20260522_165038\\test_metrics.json"
+    },
+    {
+      "model": "CNN (ResNet-50)",
+      "run_id": "cnn_20260522_171658",
+      "accuracy": 0.6649484536082474,
+      "macro_f1": 0.6103746200278907,
+      "precision": 0.6651257586194187,
+      "recall": 0.5963091332857106,
+      "path": "outputs/checkpoints\\cnn_20260522_171658\\test_metrics.json"
+    },
+    {
+      "model": "BiLSTM + GloVe",
+      "run_id": "lstm_20260522_202857",
+      "accuracy": 0.955,
+      "macro_f1": 0.6400429272791504,
+      "precision": 0.6535094585495715,
+      "recall": 0.6299415941389573,
+      "path": "outputs/checkpoints\\lstm_20260522_202857\\test_metrics.json"
+    }
+  ],
+  "best_accuracy": 0.9575,
+  "best_model": "BERT"
+}
