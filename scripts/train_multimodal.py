@@ -1,11 +1,6 @@
 """
 scripts/train_multimodal.py  — VERSION CORRIGÉE FINALE
 ────────────────────────────────────────────────────────
-Corrections :
-  1. AlignedMultimodalDatasetBERT remplace DummyMultimodalDataset
-  2. Split correct : 90% de train/ → train, 10% de train/ → val, test/ → test
-  3. Gel conditionnel : uniquement si checkpoints pré-entraînés fournis
-  4. Optimiseur adaptatif selon les paramètres réellement entraînables
 
 Usage :
     python scripts/train_multimodal.py ^
