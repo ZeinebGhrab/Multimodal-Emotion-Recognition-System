@@ -101,7 +101,7 @@ fusion:
 # ── Training Utilities ──────────────────────────────────────
 training:
   early_stopping:
-    patience: 5           # Epochs without improvement before stopping
+    patience: 3           # Epochs without improvement before stopping
     min_delta: 0.001      # Minimum change to count as improvement
     monitor: "val_loss"   # 'val_loss' (mode=min) | 'val_acc' (mode=max)
     restore_best: true    # Reload best weights when training stops

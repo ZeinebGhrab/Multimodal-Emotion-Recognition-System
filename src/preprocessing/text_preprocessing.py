@@ -43,9 +43,6 @@ FER_EMOTION_MAP = {
 }
 
 # ─── Label map for HuggingFace dair-ai/emotion → FER2013 indices ─────────────
-# BUG FIX 1: This mapping was defined inside get_text_dataloaders() and was
-# NOT used by get_bert_dataloaders(). It is now a module-level constant so
-# all functions share the same consistent mapping.
 HF_TO_FER_LABEL_MAP = {
     "sadness":  5,   # → FER 'sad'
     "joy":      3,   # → FER 'happy'
@@ -183,16 +180,6 @@ def load_glove_embeddings(vocab: "Vocabulary", glove_path: str,
 
 
 # ─── Datasets ─────────────────────────────────────────────────────────────────
-
-# BUG FIX 2: The file previously defined BERTEmotionDataset and
-# LSTMEmotionDataset TWICE (at lines ~146 and ~457).  Python's class
-# resolution means the second definition silently overwrites the first.
-# The second BERTEmotionDataset accepted (df, tokenizer, max_length) while
-# the first accepted (df, label_map, model_name, max_length).
-# get_bert_dataloaders() called the second signature but train_bert.py relied
-# on the first — causing a silent label-map miss (all labels defaulted to 0).
-# Solution: keep ONE canonical definition per class, combining the best of
-# both signatures so every caller works correctly.
 
 class BERTEmotionDataset(Dataset):
     """
