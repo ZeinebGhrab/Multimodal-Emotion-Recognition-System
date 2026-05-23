@@ -46,21 +46,28 @@ EMOTION_CLASSES = ["angry", "disgust", "fear", "happy", "neutral", "sad", "surpr
 
 DEFAULT_SYSTEM_PROMPT = """\
 Tu es un agent expert en reconnaissance des émotions multimodale.
-Tu as accès à 4 outils :
-  1. analyze_image      — analyse une image faciale (ResNet-50)
-  2. analyze_text       — analyse un texte (BERT)
-  3. analyze_multimodal — combine image + texte (Attention Fusion, ~83% accuracy)
-  4. generate_report    — génère un rapport psychologique structuré
 
-Règles de raisonnement :
-- Image ET texte  → analyze_multimodal (plus précis)
-- Image seule     → analyze_image
-- Texte seul      → analyze_text
-- Après toute analyse → appelle generate_report
-- Si erreur serveur → explique clairement
-- Réponds en français (sauf si l'utilisateur écrit en anglais)
+⚠️ RÈGLE CRITIQUE — NE JAMAIS traduire le texte utilisateur :
+  Le paramètre 'text' passé à analyze_text ou analyze_multimodal doit être
+  le texte EXACT de l'utilisateur, mot pour mot, sans aucune modification.
+  BERT est entraîné sur l'anglais — toute traduction détruit la prédiction.
+  ✅ Correct  : text="I feel so glad"
+  ❌ Interdit : text="Je me sens tellement heureux"
 
-Réponse finale : émotion + confiance + top-3 + insights psychologiques + recommandations.\
+Outils disponibles :
+  1. analyze_image      — image faciale (ResNet-50)
+  2. analyze_text       — texte EXACT tel que saisi (BERT anglais)
+  3. analyze_multimodal — image + texte exact (Attention Fusion ~83%)
+  4. generate_report    — rapport psychologique (appelle TOUJOURS après analyse)
+
+Routing :
+  Image ET texte → analyze_multimodal
+  Image seule    → analyze_image
+  Texte seul     → analyze_text
+
+Émotions valides : angry, disgust, fear, happy, neutral, sad, surprise
+NE PAS inventer d'autres labels.
+Réponse finale en français.\
 """
 
 TOOLS = [
@@ -198,9 +205,13 @@ def tool_analyze_image(image_path: str) -> dict:
 
 
 def tool_analyze_text(text: str) -> dict:
+    # Garde contre les types inattendus
+    if not isinstance(text, str):
+        text = str(text)
     if not text.strip():
         return {"error": "Le texte ne peut pas être vide"}
-    return _api_call("predict/text", method="post", json={"text": text, "include_report": False})
+    return _api_call("predict/text", method="post",
+                     json={"text": text, "include_report": False})
 
 
 def tool_analyze_multimodal(image_path: str, text: str) -> dict:
@@ -244,39 +255,70 @@ def tool_generate_report(emotion: str, scores, user_text: str = "") -> dict:
 
 
 def dispatch_tool(tool_name: str, tool_input: dict) -> str:
+    if isinstance(tool_input, str):
+        try:
+            tool_input = json.loads(tool_input)
+        except (json.JSONDecodeError, ValueError):
+            tool_input = {}
+
     step = {
-        "type":  "tool",
-        "name":  tool_name,
+        "type": "tool",
+        "name": tool_name,
         "input": tool_input,
-        "time":  datetime.now().strftime("%H:%M:%S"),
+        "time": datetime.now().strftime("%H:%M:%S"),
     }
 
     if tool_name == "analyze_image":
         path = tool_input.get("image_path", "")
-        if not path or not Path(path).exists():
-            result = {"error": "Aucune image disponible. Utilise analyze_text pour analyser le texte uniquement."}
+        if not path or not Path(str(path)).exists():
+            result = {"error": "Aucune image disponible. Utilise analyze_text."}
         else:
-            result = tool_analyze_image(path)
+            result = tool_analyze_image(str(path))
+
     elif tool_name == "analyze_text":
-        result = tool_analyze_text(tool_input["text"])
+        text = tool_input.get("text", "")
+        # Garde contre dict imbriqué
+        if isinstance(text, dict):
+            text = str(list(text.values())[0]) if text else ""
+        text = str(text).strip()
+        # Fallback : si Ollama a traduit, utiliser le texte original
+        original = st.session_state.get("_last_user_text", "")
+        if original and text != original:
+            print(f"[dispatch] Texte modifié détecté → forcé au texte original")
+            text = original
+        result = tool_analyze_text(text) if text else {"error": "Texte vide"}
+
     elif tool_name == "analyze_multimodal":
         path = tool_input.get("image_path", "")
-        if not path or not Path(path).exists():
-            result = {"error": "Aucune image disponible. Utilise analyze_text pour analyser le texte uniquement."}
+        text = tool_input.get("text", "")
+        if isinstance(text, dict):
+            text = str(list(text.values())[0]) if text else ""
+        text = str(text).strip()
+        # Fallback texte original
+        original = st.session_state.get("_last_user_text", "")
+        if original and text != original:
+            text = original
+        if not path or not Path(str(path)).exists():
+            result = {"error": "Aucune image disponible. Utilise analyze_text."}
         else:
-            result = tool_analyze_multimodal(path, tool_input["text"])
+            result = tool_analyze_multimodal(str(path), text)
+
     elif tool_name == "generate_report":
-        result = tool_generate_report(
-            emotion=tool_input.get("emotion", "neutral"),
-            scores=tool_input.get("scores", {}),
-            user_text=tool_input.get("user_text", ""),
-        )
+        emotion   = tool_input.get("emotion", "neutral")
+        scores    = tool_input.get("scores", {})
+        user_text = tool_input.get("user_text", "")
+        if isinstance(user_text, dict):
+            user_text = ""
+        # Valider l'émotion
+        VALID = {"angry","disgust","fear","happy","neutral","sad","surprise"}
+        if str(emotion) not in VALID:
+            emotion = "neutral"
+        result = tool_generate_report(str(emotion), scores, str(user_text))
     else:
         result = {"error": f"Outil inconnu : {tool_name}"}
 
-    # FIX: garde contre None + isinstance avant le test 'in'
     if result is None:
-        result = {"error": f"L'outil '{tool_name}' n'a retourné aucun résultat (None)."}
+        result = {"error": f"L'outil '{tool_name}' n'a retourné aucun résultat."}
 
     step["result"] = result
     st.session_state.agent_steps.append(step)
@@ -320,11 +362,34 @@ def run_agent(user_message: str, image_path: str = None) -> str:
     st.session_state.last_result = None
     client = get_ollama_client()
 
-    content = user_message
-    if image_path:
-        content += f"\n\n[Image fournie : {image_path}]"
+    has_image = image_path is not None and Path(image_path).exists()
+    has_text  = bool(user_message.strip())
+
+    # ── Sélection des outils selon les inputs disponibles ────────────────────
+    TOOL_MAP = {t["function"]["name"]: t for t in TOOLS}
+    if has_image and has_text:
+        active_tools = [TOOL_MAP["analyze_multimodal"], TOOL_MAP["generate_report"]]
+        instruction  = (
+            f"Appelle analyze_multimodal avec :\n"
+            f'  image_path="{image_path}"\n'
+            f'  text="{user_message}"  ← texte EXACT, ne pas modifier\n'
+            f"Puis appelle generate_report."
+        )
+    elif has_image:
+        active_tools = [TOOL_MAP["analyze_image"], TOOL_MAP["generate_report"]]
+        instruction  = (
+            f"Appelle analyze_image avec image_path=\"{image_path}\"\n"
+            f"Puis appelle generate_report."
+        )
     else:
-        content += "\n\n[IMPORTANT : Aucune image fournie. Tu DOIS appeler uniquement analyze_text — NE PAS appeler analyze_image ni analyze_multimodal.]"
+        active_tools = [TOOL_MAP["analyze_text"], TOOL_MAP["generate_report"]]
+        instruction  = (
+            f'Appelle analyze_text avec text="{user_message}"\n'
+            f"← Texte EXACT, NE PAS traduire, NE PAS modifier.\n"
+            f"Puis appelle generate_report."
+        )
+
+    content = f"{user_message}\n\n[INSTRUCTION AGENT : {instruction}]"
 
     messages = [
         {"role": "system", "content": st.session_state.system_prompt},
@@ -332,7 +397,7 @@ def run_agent(user_message: str, image_path: str = None) -> str:
     ]
     st.session_state.agent_steps.append({
         "type": "thinking",
-        "text": f"Requête : '{user_message[:80]}'" + (" + image" if image_path else ""),
+        "text": f"Requête : '{user_message[:80]}'" + (" + image" if has_image else ""),
         "time": datetime.now().strftime("%H:%M:%S"),
     })
 
@@ -341,35 +406,51 @@ def run_agent(user_message: str, image_path: str = None) -> str:
             response = client.chat(
                 model=st.session_state.model,
                 messages=messages,
-                tools=TOOLS,
+                tools=active_tools,      # ← outils filtrés
                 options={"temperature": st.session_state.temperature},
             )
         except ollama_lib.ResponseError as e:
             if "model not found" in str(e).lower():
-                return f"❌ Modèle '{st.session_state.model}' introuvable. Lancez : `ollama pull {st.session_state.model}`"
+                return f"❌ Modèle '{st.session_state.model}' introuvable."
             return f"❌ Erreur Ollama : {e}"
         except Exception as e:
-            return f"❌ Impossible de joindre Ollama ({st.session_state.ollama_host}) : {e}"
+            return f"❌ Impossible de joindre Ollama : {e}"
 
         msg = response.message
-        messages.append({"role": "assistant", "content": msg.content or "", "tool_calls": msg.tool_calls or []})
+        messages.append({
+            "role": "assistant",
+            "content": msg.content or "",
+            "tool_calls": msg.tool_calls or []
+        })
 
         if not msg.tool_calls:
-            final = msg.content or "⚠️ L'agent n'a pas retourné de réponse."
+            final = msg.content or "⚠️ Pas de réponse."
             st.session_state.agent_steps.append({
-                "type": "final",
-                "text": final,
+                "type": "final", "text": final,
                 "time": datetime.now().strftime("%H:%M:%S"),
             })
             return final
 
         for tc in msg.tool_calls:
             fn = tc.function
-            tool_input = fn.arguments if isinstance(fn.arguments, dict) else json.loads(fn.arguments)
+            raw = fn.arguments
+            if isinstance(raw, dict):
+                tool_input = raw
+            elif isinstance(raw, str):
+                try:
+                    tool_input = json.loads(raw)
+                except Exception:
+                    tool_input = {}
+            else:
+                try:
+                    tool_input = dict(raw)
+                except Exception:
+                    tool_input = vars(raw) if hasattr(raw, "__dict__") else {}
+
             result_str = dispatch_tool(fn.name, tool_input)
             messages.append({"role": "tool", "content": result_str})
 
-    return "⚠️ L'agent a atteint le nombre maximum d'itérations sans réponse finale."
+    return "⚠️ Nombre maximum d'itérations atteint."
 
 
 # ══════════════════════════════════════════════════════════════════════════════
@@ -555,7 +636,7 @@ with tab_analyse:
                         tmp_path = tmp.name
 
                 msg = user_text if user_text else "Analyse l'émotion dans cette image."
-
+                
                 with st.spinner("L'agent réfléchit… (Ollama)"):
                     t0 = time.time()
                     final_response = run_agent(msg, tmp_path)

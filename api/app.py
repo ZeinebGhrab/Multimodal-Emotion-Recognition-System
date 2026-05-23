@@ -68,10 +68,16 @@ MAX_TEXT_LEN    = 128
 BERT_MODEL      = os.getenv("BERT_MODEL", "bert-base-uncased")
 DEVICE          = "cuda" if torch.cuda.is_available() else "cpu"
 
-CNN_CHECKPOINT     = os.getenv("CNN_CHECKPOINT",     "outputs/checkpoints/best_cnn.pt")
-BERT_CHECKPOINT    = os.getenv("BERT_CHECKPOINT",    "outputs/checkpoints/best_bert.pt")
-FUSION_CHECKPOINT  = os.getenv("FUSION_CHECKPOINT",  "outputs/checkpoints/best_fusion.pt")
-FUSION_TYPE        = os.getenv("FUSION_TYPE",        "attention")
+CNN_CHECKPOINT    = os.getenv("CNN_CHECKPOINT",
+    "outputs/checkpoints/cnn_20260522_171658/best_cnn.pt")
+
+BERT_CHECKPOINT   = os.getenv("BERT_CHECKPOINT",
+    "outputs/checkpoints/bert_20260522_165038/best_bert.pt")
+
+FUSION_CHECKPOINT = os.getenv("FUSION_CHECKPOINT",
+    "outputs/checkpoints/attention_20260523_160317/best_model.pt")
+
+FUSION_TYPE       = os.getenv("FUSION_TYPE", "attention")
 
 # ─── App ──────────────────────────────────────────────────────────────────────
 
@@ -103,6 +109,10 @@ def _load_models():
         return
 
     print(f"[API] Loading models on {DEVICE} …")
+    
+    print(f"[API] Working directory : {os.getcwd()}")
+    print(f"[API] BERT_CHECKPOINT   : {BERT_CHECKPOINT}")
+    print(f"[API] Exists?           : {os.path.exists(BERT_CHECKPOINT)}")
 
     # CNN
     cnn = EmotionCNN(num_classes=7, dropout=0.5, pretrained=False).to(DEVICE)
