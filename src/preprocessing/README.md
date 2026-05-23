@@ -307,5 +307,5 @@ Index   FER label    NLP source          Model coverage
 
 ---
 
-Last Updated: 23/05/2026
+Last Updated: 23/05/2026<br>
 Status: Active ✓
