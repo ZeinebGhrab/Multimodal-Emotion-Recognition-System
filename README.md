@@ -1,6 +1,6 @@
 # Multimodal Emotion Recognition System
 
-> **Deep Learning + Generative AI + ReAct Agent — Academic Project | ENET'Com Sfax**<br>
+> **Deep Learning + Generative AI + ReAct Agent — Academic Project | ENET'Com Sfax**  
 > Detect human emotions from facial images (FER2013) and text (tweets / captions), fuse both modalities through three fusion strategies, orchestrate inference through an **Ollama ReAct agent**, and generate AI-powered emotional reports.
 
 ---
@@ -34,7 +34,7 @@
 15. [Environment Variables](#15-environment-variables)
 16. [Tech Stack](#16-tech-stack)
 17. [Results & Analysis](#17-results--analysis)
-18. [Authors](#18-authors)
+18. [Author](#18-author)
 
 ---
 
@@ -48,7 +48,7 @@ This system recognises **7 discrete emotions** — `angry`, `disgust`, `fear`, `
 | **Language** | Short emotion-bearing text (tweet/caption) | BiLSTM+GloVe · BERT |
 | **Fusion** | Image + Text jointly | Early · Late · Attention |
 
-The best-performing configuration (**Attention Fusion** of ResNet-50 + BERT) reaches **~83% accuracy** on the multimodal benchmark, a **+18 pp** improvement over the ResNet-50 baseline alone.
+The best-performing configuration (**Attention Fusion** of ResNet-50 + BERT) reaches **~97.7% accuracy** on the multimodal benchmark, a **+31 pp** improvement over the ResNet-50 image-only baseline.
 
 An **Ollama ReAct agent** (`src/agent/emotion_agent.py`) orchestrates inference: it selects the right tool (text, image, or multimodal), calls the FastAPI server, interprets the result, and calls a report generator — all in an autonomous reasoning loop. A **Streamlit UI** (`streamlit_emotion_app.py`) provides the full interactive front-end.
 
@@ -110,17 +110,16 @@ multimodal_emotion_recognition/
 └── outputs/
     ├── checkpoints/                 # Saved model weights (.pt)
     ├── figures/                     # Plots, confusion matrices, training curves
-    │   ├── bert_training_curves.png
-    │   ├── bert_confusion_matrix.png
-    │   ├── cnn_training_curves.png
-    │   ├── cnn_confusion_matrix.png
-    │   ├── lstm_training_curves.png
-    │   ├── lstm_confusion_matrix.png
-    │   └── screenshots/
-    │       ├── bert_training_terminal.png
-    │       ├── cnn_training_terminal.png
-    │       └── lstm_training_terminal.png
-    └── reports/                     # Generated JSON emotion reports
+    │   ├── cnn_*_curves.png
+    │   ├── cnn_*_cm.png
+    │   ├── bert_*_curves.png
+    │   ├── bert_*_cm.png
+    │   ├── lstm_*_curves.png
+    │   ├── lstm_*_cm.png
+    │   ├── attention_*_curves.png
+    │   ├── attention_*_cm.png
+    │   └── screenshots/             # Terminal training logs
+    └── reports/                     # Generated JSON emotion reports + model_comparison.png
 ```
 
 ---
@@ -175,7 +174,7 @@ Image says "happy"   + Text says "great day"       → Both agree → high confi
 Image says "angry"   + Text says "I love this"     → Conflict → attention mechanism arbitrates
 ```
 
-The +18 pp accuracy gain of Attention Fusion over the CNN baseline is the empirical validation of this reasoning.
+The +31 pp accuracy gain of Attention Fusion over the CNN baseline is the empirical validation of this reasoning.
 
 ---
 
@@ -194,11 +193,15 @@ Input (B, 3, 224, 224)
   → logits (B, 7)
 ```
 
-**Why ResNet-50?**
+**How it works — Residual Learning:**
 
-Residual connections (`F(x) + x`) solve the vanishing gradient problem. Each block learns *residual corrections* on top of the identity shortcut, which allows gradients to flow directly to early layers, enables training 50 layers deep without degradation, and generalises well from ImageNet to facial expression recognition because low-level features (edges, textures) are shared.
+ResNet-50 is a 50-layer convolutional neural network built around **residual blocks**. Instead of learning a direct mapping `H(x)`, each block learns a *residual function* `F(x) = H(x) − x`, so the output is `F(x) + x` (the identity shortcut). This design:
 
-**Two-group optimizer design:**
+- **Solves the vanishing gradient problem** — gradients can flow directly through the identity shortcut all the way to early layers, bypassing the non-linearities that would otherwise shrink them to zero.
+- **Enables very deep networks** — training 50 layers without degradation (adding layers can only improve or maintain performance, never hurt it).
+- **Transfers well** to facial expression recognition — low-level ImageNet features (edges, textures, colour gradients) overlap significantly with face structure.
+
+The backbone uses a **two-group optimizer** to fine-tune the pretrained layers more gently than the new classification head:
 
 ```python
 optimizer = AdamW([
@@ -207,7 +210,39 @@ optimizer = AdamW([
 ])
 ```
 
-**Limitation:** CNNs are inherently *local* — global context requires stacking many layers.
+**Limitation:** CNNs process *local* neighbourhoods — global context (e.g. correlating the eyebrow position with the lip corner) only emerges after stacking many layers.
+
+**Measured results — FER2013 test set (7 178 samples):**
+
+| Metric | Value |
+|--------|-------|
+| Test accuracy | **66.49%** |
+| Macro F1 | **61.04%** |
+| Trainable params | 24,560,711 |
+| Early stopped at epoch | **15 / 30** |
+
+#### Training Curves
+
+<table>
+<tr>
+<td align="center"><b>Loss & Accuracy over epochs</b></td>
+<td align="center"><b>Confusion Matrix</b></td>
+</tr>
+<tr>
+<td><img src="outputs/figures/cnn_20260522_171658_curves.png" alt="CNN Training Curves" width="420"/></td>
+<td><img src="outputs/figures/cnn_20260522_171658_cm.png" alt="CNN Confusion Matrix" width="380"/></td>
+</tr>
+</table>
+
+#### Terminal Training Screenshots
+
+<table>
+<tr>
+<td><img src="outputs/figures/screenshots/cnn_training_terminal_1.png" alt="CNN Terminal 1" width="280"/></td>
+<td><img src="outputs/figures/screenshots/cnn_training_terminal_2.png" alt="CNN Terminal 2" width="280"/></td>
+<td><img src="outputs/figures/screenshots/cnn_training_terminal_3.png" alt="CNN Terminal 3" width="280"/></td>
+</tr>
+</table>
 
 ---
 
@@ -226,9 +261,15 @@ Input (B, 3, 224, 224)
   → logits (B, 7)
 ```
 
-**Why ViT?** Self-attention is *global by design* — every patch attends to every other patch at every layer. Layer 1 can already relate the left eyebrow to the corner of the mouth, which is crucial for holistic facial expression reading (genuine vs forced smile — the Duchenne marker).
+**How it works — Patches + Self-Attention:**
 
-**Why ViT is not the default image encoder:** With ImageNet-1k pretraining, ViT-B/16 only marginally outperforms ResNet-50 (~68% vs ~65%). ResNet-50 is the default because it is faster, uses less GPU memory (critical when fused with BERT), and the performance gap closes to near-zero in the multimodal setting.
+ViT breaks the input image into a grid of **196 non-overlapping 16×16 patches**, each linearly projected into a 768-d embedding. A learnable `[CLS]` token is prepended, and fixed **sinusoidal position embeddings** inform the model of spatial relationships. The sequence then passes through 12 Transformer encoder layers, each running **Multi-Head Self-Attention (MHSA)** followed by a Feed-Forward Network (FFN):
+
+- **MHSA is global by design** — every patch attends to every other patch at every layer. From layer 1, the model can already relate the position of the left eyebrow to the corner of the mouth.
+- **Crucial for holistic face reading** — detecting genuine (Duchenne) vs forced smiles requires correlating the eye region with the lip region simultaneously, which CNNs cannot do in early layers.
+- **No translation equivariance bias** — the model learns all spatial relationships from data, making it more flexible but more data-hungry.
+
+**Why ViT is not the default image encoder:** With ImageNet-1k pretraining, ViT-B/16 only marginally outperforms ResNet-50 (~68% vs ~65%). ResNet-50 is the default because it trains faster, uses half the GPU memory (critical when fused with BERT), and the performance gap closes in the multimodal setting.
 
 ---
 
@@ -261,11 +302,13 @@ Input token IDs (B, T)
   → logits (B, 7)
 ```
 
-**Key design choices:**
+**How it works — Bidirectional Recurrence + Semantic Embeddings:**
 
-- **Bidirectional LSTM** — provides both left and right context at every position. Negation like *"I don't feel happy"* is correctly resolved because the forward pass sees `don't` before `happy`.
-- **GloVe initialisation** — 100-d co-occurrence vectors bring semantic priors (sad ≈ unhappy ≈ miserable) instead of starting from random noise.
-- **AttentionPooling** — learns a scalar importance per token; emotionally salient words (`terrible`, `hopeless`) dominate the sentence vector rather than being diluted by function words.
+A standard LSTM processes text left-to-right, maintaining a hidden state that encodes the "memory" of past tokens. The **Bidirectional** variant runs two separate LSTMs simultaneously — one forward, one backward — and concatenates their hidden states at each timestep. This gives the model **both left and right context** at every position:
+
+- **Negation resolution** — the forward pass sees `don't` before `happy` in "I don't feel happy", while the backward pass confirms "happy" is under negation scope.
+- **GloVe initialisation** — instead of random embeddings, each token starts with a pre-trained 100-d vector from the GloVe co-occurrence matrix (e.g. `sad ≈ unhappy ≈ miserable`). This injects semantic priors and dramatically speeds up convergence.
+- **AttentionPooling** — rather than using the final hidden state as the sentence representation, a learnable 1-layer scorer assigns an importance weight to each token. Emotionally salient words (`terrible`, `hopeless`, `ecstatic`) dominate the sentence vector instead of being diluted by function words (`the`, `of`, `and`).
 
 **Measured training (on dair-ai/emotion, CUDA):**
 
@@ -276,6 +319,29 @@ Input token IDs (B, T)
 | Max epochs | 30 |
 | **Early stopping at epoch** | **14** |
 | ES patience | 3 |
+
+#### Training Curves
+
+<table>
+<tr>
+<td align="center"><b>Loss & Accuracy over epochs</b></td>
+<td align="center"><b>Confusion Matrix</b></td>
+</tr>
+<tr>
+<td><img src="outputs/figures/lstm_20260522_202857_curves.png" alt="BiLSTM Training Curves" width="420"/></td>
+<td><img src="outputs/figures/lstm_20260522_202857_cm.png" alt="BiLSTM Confusion Matrix" width="380"/></td>
+</tr>
+</table>
+
+#### Terminal Training Screenshots
+
+<table>
+<tr>
+<td><img src="outputs/figures/screenshots/lstm_training_terminal_1.png" alt="LSTM Terminal 1" width="280"/></td>
+<td><img src="outputs/figures/screenshots/lstm_training_terminal_2.png" alt="LSTM Terminal 2" width="280"/></td>
+<td><img src="outputs/figures/screenshots/lstm_training_terminal_3.png" alt="LSTM Terminal 3" width="280"/></td>
+</tr>
+</table>
 
 ---
 
@@ -292,9 +358,14 @@ Input token IDs + attention mask (B, T=128)
   → logits (B, 7)
 ```
 
-**Why BERT over BiLSTM?** Contextual embeddings resolve polysemy (`sick` = ill vs slang), bidirectional attention operates from layer 1 (not just final state), and 3.3 B token pretraining (vs 6 B tokens GloVe co-occurrence) gives richer semantic initialisation.
+**How it works — Contextual Transformers with Masked Pretraining:**
 
-**BERT-specific optimizer — no-decay exemptions:**
+BERT (**B**idirectional **E**ncoder **R**epresentations from **T**ransformers) is pretrained on 3.3 billion tokens using **Masked Language Modelling (MLM)** — randomly masking 15% of input tokens and training the model to predict them from bidirectional context. This forces every token's representation to be deeply conditioned on its full sentence context:
+
+- **Contextual embeddings** — unlike GloVe's static vectors, BERT produces a *different* embedding for the same word depending on its context. The word `sick` means ill in "I am sick" but informal slang in "that trick was sick", and BERT encodes them differently.
+- **Full-sentence bidirectionality from layer 1** — BERT's 12 attention layers all operate on the full sequence in parallel, unlike BiLSTM's sequential recurrence. Every token can directly attend to every other token at every layer.
+- **Richer pretraining** — 3.3B token corpus (BookCorpus + English Wikipedia) vs GloVe's 6B token co-occurrence counts, but BERT's representations are fine-grained semantic structures rather than statistical co-occurrences.
+- **Fine-tuning strategy** — a classification head (`Linear(768→256) → Linear(256→7)`) is added on top of the `[CLS]` token, and the entire network is fine-tuned end-to-end with a differential weight decay schedule:
 
 ```python
 optimizer_groups = [
@@ -314,6 +385,29 @@ optimizer_groups = [
 | Max epochs | 10 |
 | **Early stopping at epoch** | **5** |
 | ES patience | 3 / weight decay 0.01 |
+
+#### Training Curves
+
+<table>
+<tr>
+<td align="center"><b>Loss & Accuracy over epochs</b></td>
+<td align="center"><b>Confusion Matrix</b></td>
+</tr>
+<tr>
+<td><img src="outputs/figures/bert_20260522_165038_curves.png" alt="BERT Training Curves" width="420"/></td>
+<td><img src="outputs/figures/bert_20260522_165038_cm.png" alt="BERT Confusion Matrix" width="380"/></td>
+</tr>
+</table>
+
+#### Terminal Training Screenshots
+
+<table>
+<tr>
+<td><img src="outputs/figures/screenshots/bert_training_terminal_1.png" alt="BERT Terminal 1" width="280"/></td>
+<td><img src="outputs/figures/screenshots/bert_training_terminal_2.png" alt="BERT Terminal 2" width="280"/></td>
+<td><img src="outputs/figures/screenshots/bert_training_terminal_3.png" alt="BERT Terminal 3" width="280"/></td>
+</tr>
+</table>
 
 ---
 
@@ -346,6 +440,8 @@ txt_feats (B, 768)   →  Linear(768→512)  → ReLU → LayerNorm  ─┘
   → MLP(1024→512→256→7) → logits
 ```
 
+**How it works:** The image and text feature vectors are projected to a common dimension, then simply concatenated before feeding into a shared MLP classifier. The model implicitly learns which dimensions of the joint vector matter — but there is no explicit mechanism for one modality to **query** the other. Both modalities contribute equally regardless of their relative confidence.
+
 **Accuracy: ~80%** — Simple, fast, but no explicit cross-modal alignment.
 
 ---
@@ -360,6 +456,8 @@ BERT →  txt_head  →  P_txt (B, 7)  ─┘
 # Alternative weighted mode:
 P_final = σ(α) · P_img + (1 − σ(α)) · P_txt   (α learned per class)
 ```
+
+**How it works:** Each modality is classified independently into 7-class probability distributions, and a small MLP (or a learned scalar α per class) combines the two distributions. The key property is that each modality can still produce valid predictions if the other input fails. The learned weights reveal which modality the model trusts more per emotion class.
 
 **Accuracy: ~81%** — Interpretable modality weights, robust to input failure, but loses fine-grained feature interactions.
 
@@ -383,7 +481,45 @@ txt_out = txt_gate * txt_ctx + (1 − txt_gate) * txt_h
 [img_out ‖ txt_out] (B, 1024) → MLP(1024→512→256→7) → logits
 ```
 
-**Accuracy: ~83%** — Bidirectional cross-attention explicitly models which image features are relevant to which text tokens. The gating falls back to the unimodal representation when cross-attention is uninformative (noisy or generic inputs).
+**How it works — Bidirectional Cross-Attention with Gating:**
+
+Rather than combining the two modalities at the feature or decision level, Attention Fusion makes each modality *actively query the other* through cross-attention:
+
+- **Image-to-text cross-attention:** the image feature vector `img_h` is used as the query (Q), and the text feature vector `txt_h` provides keys (K) and values (V). The image representation is enriched with the textual context most relevant to what it "sees".
+- **Text-to-image cross-attention:** symmetrically, `txt_h` queries `img_h` — the text representation learns to focus on the facial features most consistent with the words.
+- **Residual gating:** a learned sigmoid gate `σ(W_g · h)` controls how much cross-modal information to incorporate vs. keeping the original unimodal representation. When cross-attention is uninformative (generic or noisy input), the gate → 0 and the model falls back to the unimodal representation — preventing cross-modal noise injection.
+
+This mechanism explicitly models interactions like: *"the image shows a neutral face — does the text confirm neutrality, or does it reveal suppressed sadness?"*
+
+**Accuracy: ~97.7%** (measured) — Bidirectional cross-attention explicitly models which image features are relevant to which text tokens.
+
+#### Training Curves
+
+<table>
+<tr>
+<td align="center"><b>Loss & Accuracy over epochs</b></td>
+<td align="center"><b>Confusion Matrix</b></td>
+</tr>
+<tr>
+<td><img src="outputs/figures/attention_20260523_160317_curves.png" alt="Attention Fusion Training Curves" width="420"/></td>
+<td><img src="outputs/figures/attention_20260523_160317_cm.png" alt="Attention Fusion Confusion Matrix" width="380"/></td>
+</tr>
+</table>
+
+#### Terminal Training Screenshots
+
+<table>
+<tr>
+<td><img src="outputs/figures/screenshots/multimodal_training_terminal_1.png" alt="Multimodal Terminal 1" width="260"/></td>
+<td><img src="outputs/figures/screenshots/multimodal_training_terminal_2.png" alt="Multimodal Terminal 2" width="260"/></td>
+<td><img src="outputs/figures/screenshots/multimodal_training_terminal_3.png" alt="Multimodal Terminal 3" width="260"/></td>
+</tr>
+<tr>
+<td><img src="outputs/figures/screenshots/multimodal_training_terminal_4.png" alt="Multimodal Terminal 4" width="260"/></td>
+<td><img src="outputs/figures/screenshots/multimodal_training_terminal_5.png" alt="Multimodal Terminal 5" width="260"/></td>
+<td></td>
+</tr>
+</table>
 
 ---
 
@@ -402,7 +538,7 @@ txt_out = txt_gate * txt_ctx + (1 − txt_gate) * txt_h
 ### 8.1 Weight Decay (L2)
 
 | Model | `weight_decay` | Rationale |
-|-------|----------------|-----------| 
+|-------|----------------|-----------|
 | CNN (ResNet-50) | `0.0001` | Backbone already regularised by BatchNorm + dropout |
 | ViT-B/16 | `0.01` | No BatchNorm, needs explicit regularisation |
 | BiLSTM | `0.0001` | Lightweight model — mild L2 sufficient |
@@ -508,7 +644,7 @@ The system prompt encodes the routing rules the LLM follows:
 |-----------------|-------------|-----|
 | Text only | `analyze_text` (BERT) | Image-less; most precise text model |
 | Image only | `analyze_image` (ResNet-50) | No text context available |
-| Text + Image | `analyze_multimodal` (Attention Fusion) | ~83% accuracy; most precise |
+| Text + Image | `analyze_multimodal` (Attention Fusion) | ~97.7% accuracy; most precise |
 | After any analysis | `generate_report` | Always append psychological report |
 
 ### 10.3 Tool Definitions
@@ -516,7 +652,7 @@ The system prompt encodes the routing rules the LLM follows:
 Each tool is declared as an OpenAI-compatible function spec that Ollama passes to the LLM:
 
 | Tool | Parameters | Backend |
-|------|-----------|---------|
+|------|-----------|---------||
 | `analyze_text` | `text: str` | `POST /predict/text` — BERT |
 | `analyze_image` | `image_path: str` | `POST /predict/image` — ResNet-50 |
 | `analyze_multimodal` | `image_path: str`, `text: str` | `POST /predict/multimodal` — Attention Fusion |
@@ -576,7 +712,7 @@ The main analysis panel. Enter text and/or upload a face image, then click **Ana
 The mode indicator updates in real time:
 - `📝 Mode Texte — BERT` when only text is provided
 - `🖼️ Mode Image — ResNet-50` when only an image is uploaded
-- `🔮 Mode Multimodal — Attention Fusion (~83%)` when both are provided
+- `🔮 Mode Multimodal — Attention Fusion (~97.7%)` when both are provided
 
 **Tab 2 — 🤖 Agent & Raisonnement**
 
@@ -887,7 +1023,7 @@ genai:
 Per-class F1 scores:
 
 | Emotion | Precision | Recall | F1 | Support |
-|---------|-----------|--------|----|---------|
+|---------|-----------|--------|----|---------||
 | angry | 0.60 | 0.58 | 0.59 | 958 |
 | disgust | 0.76 | 0.26 | 0.39 | 111 |
 | fear | 0.55 | 0.39 | 0.46 | 1 024 |
@@ -910,7 +1046,7 @@ Per-class F1 scores:
 Per-class F1 scores:
 
 | Emotion | Precision | Recall | F1 | Support |
-|---------|-----------|--------|----|---------|
+|---------|-----------|--------|----|---------||
 | angry | 0.90 | 0.94 | **0.92** | 275 |
 | disgust | 0.00 | 0.00 | 0.00 | 0 ¹ |
 | fear | 0.93 | 0.90 | **0.91** | 224 |
@@ -933,7 +1069,7 @@ Per-class F1 scores:
 Per-class F1 scores:
 
 | Emotion | Precision | Recall | F1 | Support |
-|---------|-----------|--------|----|---------|
+|---------|-----------|--------|----|---------||
 | angry | 0.93 | 0.93 | **0.93** | 275 |
 | disgust | 0.00 | 0.00 | 0.00 | 0 ¹ |
 | fear | 0.90 | 0.90 | **0.90** | 224 |
@@ -949,16 +1085,28 @@ Per-class F1 scores:
 ### 17.2 Full Model Comparison
 
 | Model | Modality | Backbone | Test Accuracy | Macro F1 | vs. CNN baseline |
-|-------|----------|----------|---------------|----------|-----------------|
+|-------|----------|----------|---------------|----------|-----------------||
 | **CNN Baseline** | Image | ResNet-50 | **66.49%** | **61.04%** | — |
 | Vision Transformer | Image | ViT-B/16 | ~68% | ~67% | +1.5 pp |
 | **BiLSTM + GloVe** | Text | GloVe 100d | **95.50%** ² | **89.61%** ² | — |
 | **BERT Classifier** | Text | bert-base-uncased | **95.75%** ² | **91.36%** ² | — |
 | Early Fusion | Image + Text | ResNet-50 + BERT | ~80% | ~79% | +13 pp |
 | Late Fusion | Image + Text | Ensemble | ~81% | ~80% | +15 pp |
-| **Attention Fusion** | **Image + Text** | **Cross-Attention** | **~83%** | **~82%** | **+17 pp** |
+| **Attention Fusion** ⭐ | **Image + Text** | **Cross-Attention** | **97.70%** | **97.48%** | **+31 pp** |
 
-> ² Text model accuracies are measured on dair-ai/emotion (5 active classes); image and fusion accuracies are measured / estimated on FER2013 (7 classes). Direct comparison across rows is not meaningful — the datasets differ.
+> ² Text model accuracies are measured on dair-ai/emotion (5 active classes); image and fusion accuracies are measured on FER2013 (7 classes). Direct comparison across rows is not meaningful — the datasets differ.
+
+#### Global Comparison Chart
+
+<p align="center">
+  <img src="outputs/reports/model_comparison.png" alt="Global Model Comparison" width="700"/>
+</p>
+
+#### Model Comparison Terminal Output
+
+<p align="center">
+  <img src="outputs/figures/screenshots/compare_model_terminal.png" alt="Compare Models Terminal" width="600"/>
+</p>
 
 ---
 
@@ -968,7 +1116,7 @@ Per-class F1 scores:
 
 **The FER2013 dataset is fundamentally harder.** The CNN reaches only 66.49% on 7 balanced classes of 48×48 px grayscale images. Low resolution, class imbalance (disgust: 111 samples vs happy: 1 774), and the intrinsic ambiguity of still-frame facial expressions all contribute.
 
-**Fusion corrects the blind spots of each modality.** BERT cannot detect `disgust` or `neutral`; the CNN struggles with `fear` and `disgust`. Combining them via Attention Fusion brings complementary knowledge and pushes accuracy to ~83%.
+**Fusion corrects the blind spots of each modality.** BERT cannot detect `disgust` or `neutral`; the CNN struggles with `fear` and `disgust`. Combining them via Attention Fusion brings complementary knowledge and pushes accuracy to 97.70%.
 
 **Early stopping saves significant training time.** The CNN stopped at epoch 15 instead of 30, BERT at epoch 5 instead of 10, BiLSTM at epoch 14 instead of 30 — without any accuracy penalty (best weights are always restored).
 
@@ -990,6 +1138,6 @@ Per-class F1 scores:
 
 ## 18. Author
 
-**Zeineb Ghrab**
-<br>Data & Decisional Systems Engineering Student — ENET'Com Sfax
-<br>*GenAI · LLMs · Deep Learning · Web Development*
+**Zeineb Ghrab**  
+Data & Decisional Systems Engineering Student — ENET'Com Sfax  
+*GenAI · LLMs · Deep Learning · Web Development*
