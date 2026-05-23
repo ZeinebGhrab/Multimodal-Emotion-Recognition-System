@@ -1,49 +1,43 @@
-📈 outputs/ — Models, Results & Artifacts
-==========================================
+# outputs/ — Models, Results & Artifacts
 
-## Overview
-
-The `outputs/` folder stores all artifacts produced by training runs.
-It is the only folder that persists between sessions (not in `.gitignore`
-except for `.pt` model weights and checkpoint directories).
+The `outputs/` folder stores all artifacts produced by training runs. Figures and JSON reports are committed; model weights (`.pt`) are not.
 
 ```
 outputs/
 │
 ├── checkpoints/                    Per-run model weights and metrics
-│   ├── cnn_20260521_120000/
-│   │   ├── best_cnn.pt             Best CNN weights (saved by EarlyStopping)
-│   │   └── test_metrics.json       Accuracy, F1, per-class scores
+│   ├── cnn_<YYYYMMDD_HHMMSS>/
+│   │   ├── best_cnn.pt             Best CNN weights (EarlyStopping)
+│   │   └── test_metrics.json
 │   │
-│   ├── bert_20260521_130000/
+│   ├── bert_<YYYYMMDD_HHMMSS>/
 │   │   ├── best_bert.pt
 │   │   └── test_metrics.json
 │   │
-│   ├── lstm_20260521_140000/
+│   ├── lstm_<YYYYMMDD_HHMMSS>/
 │   │   ├── best_lstm.pt
 │   │   └── test_metrics.json
 │   │
-│   └── attention_20260521_150000/
-│       ├── best_model.pt           Best fusion model weights
+│   └── attention_<YYYYMMDD_HHMMSS>/
+│       ├── best_model.pt           Best fusion weights
 │       ├── test_metrics.json
-│       └── sample_report.json      Demo GenAI report from train_multimodal.py
+│       └── sample_report.json      Demo GenAI emotion report
 │
-├── figures/                        PNG plots produced by training scripts
-│   ├── cnn_<timestamp>_curves.png          Loss + accuracy over epochs
+├── figures/
+│   ├── cnn_<timestamp>_curves.png          Training curves (loss + accuracy)
 │   ├── cnn_<timestamp>_cm.png              Confusion matrix
 │   ├── bert_<timestamp>_curves.png
 │   ├── bert_<timestamp>_cm.png
 │   ├── lstm_<timestamp>_curves.png
 │   ├── lstm_<timestamp>_cm.png
-│   └── screenshots/                        Terminal screenshots (manual)
-│       ├── bert_training_terminal.png
-│       ├── cnn_training_terminal.png
-│       └── lstm_training_terminal.png
+│   ├── attention_<timestamp>_curves.png
+│   ├── attention_<timestamp>_cm.png
+│   └── screenshots/                        Terminal training logs (manual)
 │
-└── reports/                        Aggregated results and JSON emotion reports
-    ├── model_comparison.png         Bar chart (compare_models.py)
-    ├── comparison_summary.json      Best model, all metrics
-    └── report_<emotion>.json        Individual emotion reports (genai module)
+└── reports/
+    ├── model_comparison.png         Grouped bar chart (compare_models.py)
+    ├── comparison_summary.json      Best model + all metrics
+    └── report_<emotion>.json        Individual GenAI emotion reports
 ```
 
 ---
@@ -52,43 +46,28 @@ outputs/
 
 ### Naming Convention
 
-Each training run creates a timestamped subdirectory:
+Each training run creates a timestamped sub-directory:
 
 ```
 <model_type>_<YYYYMMDD>_<HHMMSS>/
 ```
 
-Examples:
-```
-cnn_20260521_120000/
-bert_20260521_130000/
-lstm_20260521_140000/
-early_20260521_150000/
-late_20260521_150000/
-attention_20260521_150000/
-```
+`model_type` prefixes: `cnn`, `bert`, `lstm`, `early`, `late`, `attention`
 
-The `model_type` prefix is used by `compare_models.py` to infer which
-model each run represents.
+### Model Weight Files
 
-### best_*.pt
+| File | Created by | Size |
+|------|-----------|------|
+| `best_cnn.pt` | `train_cnn.py` | ~90 MB |
+| `best_bert.pt` | `train_bert.py` | ~420 MB |
+| `best_lstm.pt` | `train_lstm.py` | ~12 MB |
+| `best_model.pt` | `train_multimodal.py` | ~510 MB |
 
-Saved automatically by `EarlyStopping` whenever validation loss improves.
-
-| File              | Created by          | Contains                     | Size    |
-|-------------------|---------------------|------------------------------|---------|
-| `best_cnn.pt`     | `train_cnn.py`      | ResNet-50 `state_dict`       | ~90 MB  |
-| `best_bert.pt`    | `train_bert.py`     | BERT `state_dict`            | ~420 MB |
-| `best_lstm.pt`    | `train_lstm.py`     | BiLSTM `state_dict`          | ~12 MB  |
-| `best_model.pt`   | `train_multimodal.py`| Fusion `state_dict`         | ~510 MB |
-
-> `.pt` files are in `.gitignore` — they must be regenerated or
-> downloaded separately.
+All `.pt` files are gitignored and must be regenerated or downloaded separately.
 
 ### test_metrics.json
 
-Written by each training script after final evaluation.
-Loaded by `compare_models.py` to produce the comparison chart.
+Written after final evaluation. Loaded by `compare_models.py` to build the comparison chart.
 
 ```json
 {
@@ -117,27 +96,15 @@ Loaded by `compare_models.py` to produce the comparison chart.
 
 All plots are saved at **150 DPI** with `bbox_inches="tight"`.
 
-| File pattern                    | Content                           | Produced by          |
-|---------------------------------|-----------------------------------|----------------------|
-| `<run>_curves.png`              | Loss + accuracy over epochs        | All `train_*.py`     |
-| `<run>_cm.png`                  | Normalized confusion matrix        | All `train_*.py`     |
-| `per_class_heatmap.png`         | F1 heatmap across models           | `compare_models.py`  |
-| `screenshots/*.png`             | Terminal output (manual captures)  | Manual               |
+| File pattern | Content | Produced by |
+|-------------|---------|-------------|
+| `<run>_curves.png` | Loss + accuracy over epochs | All `train_*.py` |
+| `<run>_cm.png` | Normalised confusion matrix | All `train_*.py` |
+| `screenshots/*.png` | Terminal output | Manual captures |
 
-### Training Curves Plot
+**Training curves:** Two panels — loss (train/val) and accuracy (train/val). Early stopping epoch is visible as the last data point.
 
-Two panels:
-- Left: cross-entropy loss (train blue, val amber)
-- Right: accuracy % (train green, val red)
-
-Early stopping epoch is visible as the last data point.
-
-### Confusion Matrix Plot
-
-- Normalized by row (shows recall per class)
-- Blue colormap (`cmap="Blues"`)
-- Cell annotations with 2 decimal places
-- Rows = true class, Columns = predicted class
+**Confusion matrix:** Normalised by row (shows recall per class). Blue colormap, 2-decimal cell annotations.
 
 ---
 
@@ -145,9 +112,7 @@ Early stopping epoch is visible as the last data point.
 
 ### model_comparison.png
 
-Grouped bar chart produced by `compare_models.py`.
-4 bars per model: Accuracy, Macro F1, Macro Precision, Macro Recall.
-Value labels printed above each bar.
+Grouped bar chart from `compare_models.py` — 4 bars per model (Accuracy, Macro F1, Precision, Recall) with value labels above each bar.
 
 ### comparison_summary.json
 
@@ -156,22 +121,16 @@ Value labels printed above each bar.
   "models": [
     {
       "model": "Attention Fusion",
-      "accuracy": 0.83,
-      "macro_f1": 0.82,
-      "precision": 0.83,
-      "recall": 0.82
-    },
-    ...
+      "accuracy": 0.977,
+      "macro_f1": 0.9748,
+      "precision": 0.977,
+      "recall": 0.9748
+    }
   ],
-  "best_accuracy": 0.83,
+  "best_accuracy": 0.977,
   "best_model": "Attention Fusion"
 }
 ```
-
-### report_<emotion>.json
-
-Individual emotion reports generated by `src/genai/report_generator.py`.
-See `GENAI.md` for the full schema.
 
 ---
 
@@ -184,8 +143,7 @@ from src.models.cnn_model import EmotionCNN
 
 model = EmotionCNN(num_classes=7, pretrained=False)
 model.load_state_dict(
-    torch.load("outputs/checkpoints/cnn_20260521/best_cnn.pt",
-               map_location="cpu")
+    torch.load("outputs/checkpoints/cnn_20260521/best_cnn.pt", map_location="cpu")
 )
 model.eval()
 ```
@@ -197,56 +155,32 @@ from src.models.lstm_model import BERTClassifier
 
 model = BERTClassifier(model_name="bert-base-uncased", num_classes=7)
 model.load_state_dict(
-    torch.load("outputs/checkpoints/bert_20260521/best_bert.pt",
-               map_location="cpu")
+    torch.load("outputs/checkpoints/bert_20260521/best_bert.pt", map_location="cpu")
 )
 model.eval()
 ```
 
-### Fusion (via FastAPI env vars)
+### Fusion (via FastAPI environment variables)
 
 ```bash
-CNN_CHECKPOINT=outputs/checkpoints/cnn_20260521/best_cnn.pt
-BERT_CHECKPOINT=outputs/checkpoints/bert_20260521/best_bert.pt
-FUSION_CHECKPOINT=outputs/checkpoints/attention_20260521/best_model.pt
+CNN_CHECKPOINT=outputs/checkpoints/cnn_20260521/best_cnn.pt \
+BERT_CHECKPOINT=outputs/checkpoints/bert_20260521/best_bert.pt \
+FUSION_CHECKPOINT=outputs/checkpoints/attention_20260521/best_model.pt \
 uvicorn api.app:app --port 8000
 ```
 
 ---
 
-## File Size Overview
-
-```
-Large files (model weights):
-├── best_bert.pt               ~420 MB
-├── best_model.pt (fusion)     ~510 MB
-├── best_cnn.pt                ~90 MB
-├── best_lstm.pt               ~12 MB
-
-Medium files:
-├── test_metrics.json          ~5 KB per run
-├── comparison_summary.json    ~10 KB
-
-Figures:
-├── *_curves.png               ~400 KB each
-├── *_cm.png                   ~300 KB each
-├── model_comparison.png       ~500 KB
-```
-
----
-
-## .gitignore for outputs/
+## .gitignore Rules
 
 ```gitignore
-outputs/checkpoints          # entire checkpoints directory (large .pt files)
-*.pt                         # model weights anywhere
-*.bin                        # HuggingFace weight files
+outputs/checkpoints    # large .pt model weight files
+*.pt
+*.bin                  # HuggingFace weight files
 ```
 
-Figures and JSON reports are **not** gitignored — they are small and
-useful for documentation.
+Figures (PNG) and JSON reports are **not** gitignored — they are small and useful for documentation.
 
 ---
 
-Last Updated: 23/05/2026<br>
-Status: Active ✓
+*Last Updated: 23/05/2026 — Status: Active ✓*

@@ -1,4 +1,4 @@
-🔧 src/preprocessing/ — Data Preprocessing Pipeline
+src/preprocessing/ — Data Preprocessing Pipeline
 =====================================================
 
 ## Overview
@@ -295,5 +295,4 @@ Index   FER label    NLP source          Model coverage
 
 ---
 
-Last Updated: 23/05/2026<br>
-Status: Active ✓
+*Last Updated: 23/05/2026 — Status: Active ✓*
