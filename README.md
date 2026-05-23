@@ -652,7 +652,7 @@ The system prompt encodes the routing rules the LLM follows:
 Each tool is declared as an OpenAI-compatible function spec that Ollama passes to the LLM:
 
 | Tool | Parameters | Backend |
-|------|-----------|---------||
+|------|-----------|---------|
 | `analyze_text` | `text: str` | `POST /predict/text` — BERT |
 | `analyze_image` | `image_path: str` | `POST /predict/image` — ResNet-50 |
 | `analyze_multimodal` | `image_path: str`, `text: str` | `POST /predict/multimodal` — Attention Fusion |
