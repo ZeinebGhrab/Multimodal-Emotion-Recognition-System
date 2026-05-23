@@ -20,28 +20,41 @@ Detect human emotions from facial images and text, fuse both modalities through 
 
 ## Table of Contents
 
-1. [Overview](#1-overview)
-2. [Architecture at a Glance](#2-architecture-at-a-glance)
-3. [Project Structure](#3-project-structure)
-4. [Quick Start](#4-quick-start)
-5. [Datasets](#5-datasets)
-6. [Image Models](#6-image-models)
-7. [Text Models](#7-text-models)
-8. [Fusion Strategies](#8-fusion-strategies)
-9. [Regularisation](#9-regularisation)
-10. [GenAI Module](#10-genai-module)
-11. [Ollama ReAct Agent](#11-ollama-react-agent)
-12. [Streamlit Interface](#12-streamlit-interface)
-13. [FastAPI Server](#13-fastapi-server)
-14. [Configuration Reference](#14-configuration-reference)
-15. [Environment Variables](#15-environment-variables)
-16. [Tech Stack](#16-tech-stack)
-17. [Results & Analysis](#17-results--analysis)
-18. [Author](#18-author)
+1. [Demo](#1-demo)
+2. [Overview](#2-overview)
+3. [Architecture at a Glance](#3-architecture-at-a-glance)
+4. [Project Structure](#4-project-structure)
+5. [Quick Start](#5-quick-start)
+6. [Datasets](#6-datasets)
+7. [Image Models](#7-image-models)
+8. [Text Models](#8-text-models)
+9. [Fusion Strategies](#9-fusion-strategies)
+10. [Regularisation](#10-regularisation)
+11. [GenAI Module](#11-genai-module)
+12. [Ollama ReAct Agent](#12-ollama-react-agent)
+13. [Streamlit Interface](#13-streamlit-interface)
+14. [FastAPI Server](#14-fastapi-server)
+15. [Configuration Reference](#15-configuration-reference)
+16. [Environment Variables](#16-environment-variables)
+17. [Tech Stack](#17-tech-stack)
+18. [Results & Analysis](#18-results--analysis)
+19. [Author](#19-author)
 
 ---
+ 
+## 1. Demo
+ 
+<p align="center">
+  <video src="demo.mp4" width="700" controls>
+    Your browser does not support the video tag. <a href="demo.mp4">Download the demo video</a>.
+  </video>
+</p>
 
-## 1. Overview
+> **Full walkthrough:** multimodal input → ReAct agent reasoning → emotion prediction → AI-generated psychological report.
+ 
+---
+
+## 2. Overview
 
 This system recognises **7 discrete emotions** from two complementary input modalities:
 
@@ -57,7 +70,7 @@ The best configuration — **Attention Fusion** of ResNet-50 + BERT — reaches 
 
 ---
 
-## 2. Architecture at a Glance
+## 3. Architecture at a Glance
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -92,7 +105,7 @@ The best configuration — **Attention Fusion** of ResNet-50 + BERT — reaches 
 
 ---
 
-## 3. Project Structure
+## 4. Project Structure
 
 ```
 multimodal_emotion_recognition/
@@ -152,7 +165,7 @@ multimodal_emotion_recognition/
 
 ---
 
-## 4. Quick Start
+## 5. Quick Start
 
 ### Step 1 — Install dependencies
 
@@ -247,7 +260,7 @@ streamlit run streamlit_emotion_app.py
 
 ---
 
-## 5. Datasets
+## 6. Datasets
 
 | Dataset | Task | Classes | Size | Source |
 |---------|------|---------|------|--------|
@@ -284,9 +297,9 @@ The preprocessing pipeline auto-detects which format is present.
 
 ---
 
-## 6. Image Models
+## 7. Image Models
 
-### 6.1 ResNet-50 (default)
+### 7.1 ResNet-50 (default)
 
 ```
 Input (B, 3, 224, 224)
@@ -334,7 +347,7 @@ optimizer = AdamW([
 </tr>
 </table>
 
-### 6.2 ViT-B/16 (alternative)
+### 7.2 ViT-B/16 (alternative)
 
 ```
 Input (B, 3, 224, 224)
@@ -345,7 +358,7 @@ Input (B, 3, 224, 224)
 
 ViT performs global self-attention from layer 1, making it superior at correlating distant facial regions (e.g. eyebrows + lip corners). However, it requires more GPU memory (~8 GB vs ~4 GB) and trains slower — ResNet-50 is the default for fusion because the gap closes in the multimodal setting.
 
-### 6.3 ResNet-50 vs ViT — Head-to-Head
+### 7.3 ResNet-50 vs ViT — Head-to-Head
 
 | Criterion | ResNet-50 | ViT-B/16 |
 |-----------|-----------|----------|
@@ -357,9 +370,9 @@ ViT performs global self-attention from layer 1, making it superior at correlati
 
 ---
 
-## 7. Text Models
+## 8. Text Models
 
-### 7.1 BiLSTM + GloVe
+### 8.1 BiLSTM + GloVe
 
 ```
 Input token IDs (B, T)
@@ -395,7 +408,7 @@ Input token IDs (B, T)
 </tr>
 </table>
 
-### 7.2 BERT (default)
+### 8.2 BERT (default)
 
 ```
 Input token IDs + attention mask (B, T=128)
@@ -437,7 +450,7 @@ optimizer_groups = [
 </tr>
 </table>
 
-### 7.3 BiLSTM vs BERT — Head-to-Head
+### 8.3 BiLSTM vs BERT — Head-to-Head
 
 | Criterion | BiLSTM + GloVe | BERT |
 |-----------|----------------|------|
@@ -451,11 +464,11 @@ optimizer_groups = [
 
 ---
 
-## 8. Fusion Strategies
+## 9. Fusion Strategies
 
 All three strategies are in `src/fusion/fusion_models.py` and share the same interface.
 
-### 8.1 Early Fusion — Concatenation
+### 9.1 Early Fusion — Concatenation
 
 ```
 img_feats (B, 2048)  → Linear(2048 → 512) → ReLU → LayerNorm ─┐
@@ -465,7 +478,7 @@ txt_feats (B, 768)   → Linear(768 → 512)  → ReLU → LayerNorm ─┘
 
 Both modalities contribute equally — no explicit mechanism for one to query the other. **~80% accuracy.**
 
-### 8.2 Late Fusion — Learned Ensemble
+### 9.2 Late Fusion — Learned Ensemble
 
 ```
 CNN  → img_head → P_img (B, 7) ─┐
@@ -475,7 +488,7 @@ BERT → txt_head → P_txt (B, 7) ─┘
 
 Each modality classifies independently; a small MLP combines the probability distributions. Robust to single-modality failure. **~81% accuracy.**
 
-### 8.3 Attention Fusion ⭐ — Best
+### 9.3 Attention Fusion ⭐ — Best
 
 ```
 img_feats → Linear(2048 → 512) + LayerNorm → img_h (B, 512)
@@ -495,7 +508,7 @@ txt_out = txt_gate * txt_ctx + (1 − txt_gate) * txt_h
 
 Each modality actively queries the other. The sigmoid gate controls how much cross-modal context to incorporate — when cross-attention is uninformative, the gate → 0 and the model falls back to the unimodal representation, preventing noise injection. **97.7% accuracy (+31 pp over CNN baseline).**
 
-### 8.4 Why Attention Fusion Wins
+### 9.4 Why Attention Fusion Wins
 
 | Image | Text | Early/Late prediction | Attention prediction |
 |-------|------|-----------------------|---------------------|
@@ -525,7 +538,7 @@ Each modality actively queries the other. The sigmoid gate controls how much cro
 
 ---
 
-## 9. Regularisation
+## 10. Regularisation
 
 ### Weight Decay (L2)
 
@@ -564,7 +577,7 @@ All models use `CrossEntropyLoss(label_smoothing=0.1)` to prevent overconfidence
 
 ---
 
-## 10. GenAI Module
+## 11. GenAI Module
 
 `src/genai/report_generator.py` generates a structured psychological report for each prediction.
 
@@ -598,7 +611,7 @@ All models use `CrossEntropyLoss(label_smoothing=0.1)` to prevent overconfidence
 
 ---
 
-## 11. Ollama ReAct Agent
+## 12. Ollama ReAct Agent
 
 `src/agent/emotion_agent.py` — an autonomous agent that orchestrates inference through a **ReAct loop** (Reason → Act → Observe).
 
@@ -646,7 +659,7 @@ All models use `CrossEntropyLoss(label_smoothing=0.1)` to prevent overconfidence
 
 ---
 
-## 12. Streamlit Interface
+## 13. Streamlit Interface
 
 ```bash
 # Both servers must be running first
@@ -683,7 +696,7 @@ Live customisation: system prompt editor, tool description editor, pre-built pat
 
 ---
 
-## 13. FastAPI Server
+## 14. FastAPI Server
 
 ```bash
 uvicorn api.app:app --reload --port 8000
@@ -736,7 +749,7 @@ Swagger UI: `http://localhost:8000/docs`
 
 ---
 
-## 14. Configuration Reference
+## 15. Configuration Reference
 
 All hyperparameters live in `configs/config.yaml`. Scripts read them at start-up and accept CLI flags that override any value.
 
@@ -804,7 +817,7 @@ genai:
 
 ---
 
-## 15. Environment Variables
+## 16. Environment Variables
 
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
@@ -818,7 +831,7 @@ genai:
 
 ---
 
-## 16. Tech Stack
+## 17. Tech Stack
 
 | Layer | Tools |
 |-------|-------|
@@ -837,11 +850,11 @@ genai:
 
 ---
 
-## 17. Results & Analysis
+## 18. Results & Analysis
 
 > All numbers are **measured results** from actual training runs on CUDA (NVIDIA RTX 4050). Text models are evaluated on dair-ai/emotion (2 000 samples). Image and fusion models are evaluated on FER2013 (7 178 samples).
 
-### 17.1 Full Model Comparison
+### 18.1 Full Model Comparison
 
 | Model | Modality | Test Accuracy | Macro F1 | vs CNN baseline |
 |-------|----------|---------------|----------|-----------------|
@@ -863,7 +876,7 @@ genai:
   <img src="outputs/figures/screenshots/compare_model_terminal.png" width="600"/>
 </p>
 
-### 17.2 CNN — Per-Class Results (FER2013)
+### 18.2 CNN — Per-Class Results (FER2013)
 
 | Emotion | Precision | Recall | F1 | Support |
 |---------|-----------|--------|-----|---------|
@@ -875,7 +888,7 @@ genai:
 | sad | 0.52 | 0.59 | 0.55 | 1 247 |
 | surprise | 0.76 | 0.79 | 0.78 | 831 |
 
-### 17.3 Key Observations
+### 18.3 Key Observations
 
 **Text models reach very high accuracy on their domain.** BERT (95.75%) and BiLSTM (95.50%) both excel on dair-ai/emotion. However, they have no exposure to `disgust` and `neutral`, creating a hard ceiling in multimodal scenarios.
 
@@ -885,7 +898,7 @@ genai:
 
 **Early stopping saved significant compute.** CNN stopped at epoch 15/30, BERT at 5/10, BiLSTM at 14/30 — without any accuracy penalty (best weights are always restored).
 
-### 17.4 Per-Class Difficulty
+### 18.4 Per-Class Difficulty
 
 | Emotion | Difficulty | Reason |
 |---------|-----------|--------|
@@ -899,7 +912,7 @@ genai:
 
 ---
 
-## 18. Author
+## 19. Author
 
 **Zeineb Ghrab**  
 Data & Decisional Systems Engineering Student — ENET'Com Sfax  
