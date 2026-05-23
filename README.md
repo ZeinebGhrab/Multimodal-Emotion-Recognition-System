@@ -83,7 +83,7 @@ The best configuration — **Attention Fusion** of ResNet-50 + BERT — reaches 
              └──────────────┬──────────────┘
                             │
              ┌──────────────▼──────────────┐
-             │  FastAPI Server  +  Claude  │
+             │  FastAPI Server  +  Ollama  │
              │  (inference  +  reports)    │
              └─────────────────────────────┘
 ```
