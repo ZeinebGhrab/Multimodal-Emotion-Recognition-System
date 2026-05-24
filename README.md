@@ -8,9 +8,6 @@
 [![Streamlit](https://img.shields.io/badge/UI-Streamlit-FF4B4B?logo=streamlit&logoColor=white)]()
 [![License](https://img.shields.io/badge/license-Academic-lightgrey.svg)]()
 
-[![Stars](https://img.shields.io/github/stars/ZeinebGhrab/multimodal-emotion-recognition?style=social)]()
-[![Forks](https://img.shields.io/github/forks/ZeinebGhrab/multimodal-emotion-recognition?style=social)]()
-
 > **Deep Learning · Generative AI · ReAct Agent**  
 > Academic Project — ENET'Com Sfax
 
