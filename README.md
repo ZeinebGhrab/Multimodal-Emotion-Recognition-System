@@ -45,8 +45,8 @@ Detect human emotions from facial images and text, fuse both modalities through 
 ## 1. Demo
  
 <p align="center">
-  <video src="https://github.com/ZeinebGhrab/multimodal-emotion-recognition/demo.mp4" width="700" controls>
-    Your browser does not support the video tag. <a href="https://github.com/ZeinebGhrab/multimodal-emotion-recognition/demo.mp4">Download the demo video</a>.
+  <video src="https://github.com/user-attachments/assets/8c42a14f-af92-41e3-b105-375050698dcc" width="700" controls>
+    Your browser does not support the video tag. <a href="https://github.com/user-attachments/assets/8c42a14f-af92-41e3-b105-375050698dcc">Download the demo video</a>.
   </video>
 </p>
 
